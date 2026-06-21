@@ -1,0 +1,50 @@
+{
+  "rules": {
+    "patients": {
+      "$patientId": {
+        "liveVitals": {
+          // A patient can read their own vitals, and authenticated users (Doctors, Hospitals, Admins) can read them to monitor in real-time
+          ".read": "auth != null && (auth.uid == $patientId || root.child('users').child(auth.uid).child('role').val() == 'doctor' || root.child('users').child(auth.uid).child('role').val() == 'hospital' || root.child('users').child(auth.uid).child('role').val() == 'admin')",
+          
+          // Only the patient's authenticated hardware/client node can write/update their live vitals
+          ".write": "auth != null && auth.uid == $patientId",
+          
+          // Data validation to enforce structure integrity for IoT payloads
+          ".validate": "newData.hasChildren(['heartRate', 'spo2', 'temperature', 'systolic', 'diastolic', 'glucose', 'fallDetected', 'lastUpdated'])",
+          
+          "heartRate": {
+            ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 250"
+          },
+          "spo2": {
+            ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100"
+          },
+          "temperature": {
+            ".validate": "newData.isNumber() && newData.val() >= 25 && newData.val() <= 48"
+          },
+          "systolic": {
+            ".validate": "newData.isNumber() && newData.val() >= 30 && newData.val() <= 300"
+          },
+          "diastolic": {
+            ".validate": "newData.isNumber() && newData.val() >= 20 && newData.val() <= 200"
+          },
+          "glucose": {
+            ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 800"
+          },
+          "fallDetected": {
+            ".validate": "newData.isBoolean()"
+          },
+          "lastUpdated": {
+            ".validate": "newData.isString()"
+          }
+        }
+      }
+    },
+    // User profile mirror node to check roles within Realtime Database rules (optional sync database check)
+    "users": {
+      "$userId": {
+        ".read": "auth != null",
+        ".write": "auth != null && (auth.uid == $userId || root.child('users').child(auth.uid).child('role').val() == 'admin')"
+      }
+    }
+  }
+}

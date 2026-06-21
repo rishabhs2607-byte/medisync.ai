@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { getMediSyncDb, saveMediSyncDb, PatientRecord, Appointment, Prescription, EmergencyAlert } from "@/services/firebase";
 import { analyzeVitals } from "@/services/aiEngine";
+import AuthGuard from "@/components/AuthGuard";
 import { 
   Users, 
   Heart, 
@@ -21,7 +22,9 @@ import {
   ChevronRight, 
   Video,
   ArrowLeft,
-  Settings
+  Settings,
+  ArrowRightLeft,
+  ChevronDown
 } from "lucide-react";
 
 export default function DoctorDashboard() {
@@ -29,12 +32,17 @@ export default function DoctorDashboard() {
   const [selectedPatientId, setSelectedPatientId] = useState("pat1");
   const [db, setDb] = useState<ReturnType<typeof getMediSyncDb> | null>(null);
 
+  // Transfer states
+  const [transferDoctorId, setTransferDoctorId] = useState("doc2");
+  const [transferSuccess, setTransferSuccess] = useState(false);
+
   // Prescription builder state
   const [medName, setMedName] = useState("");
   const [medDosage, setMedDosage] = useState("");
   const [medFreq, setMedFreq] = useState("");
   const [medDur, setMedDur] = useState("");
-  const [currentPresMeds, setCurrentPresMeds] = useState<{ name: string; dosage: string; frequency: string; duration: string }[]>([]);
+  const [medInst, setMedInst] = useState("After Food");
+  const [currentPresMeds, setCurrentPresMeds] = useState<{ name: string; dosage: string; frequency: string; duration: string; instructions?: string }[]>([]);
   const [presNotes, setPresNotes] = useState("");
 
   const loadDb = () => {
@@ -48,7 +56,7 @@ export default function DoctorDashboard() {
   }, []);
 
   if (!db) {
-    return <div className="min-h-screen bg-background flex items-center justify-center text-zinc-400 font-mono">Connecting to MediSync DB...</div>;
+    return <div className="min-h-screen bg-background flex items-center justify-center text-zinc-400 font-mono bg-luxury-pureBlack">Connecting to MediSync DB...</div>;
   }
 
   const doctorProfile = db.users.find(u => u.uid === doctorId);
@@ -57,7 +65,7 @@ export default function DoctorDashboard() {
 
   const addMedicineToDraft = () => {
     if (!medName || !medDosage || !medFreq || !medDur) return;
-    setCurrentPresMeds([...currentPresMeds, { name: medName, dosage: medDosage, frequency: medFreq, duration: medDur }]);
+    setCurrentPresMeds([...currentPresMeds, { name: medName, dosage: medDosage, frequency: medFreq, duration: medDur, instructions: medInst }]);
     setMedName("");
     setMedDosage("");
     setMedFreq("");
@@ -81,7 +89,6 @@ export default function DoctorDashboard() {
     const currentDb = getMediSyncDb();
     currentDb.prescriptions.unshift(newPres);
     
-    // Also log in patient medical record history
     const patientRecord = currentDb.patients.find(p => p.uid === selectedPatient.uid);
     if (patientRecord) {
       patientRecord.history.unshift({
@@ -94,9 +101,56 @@ export default function DoctorDashboard() {
     saveMediSyncDb(currentDb);
     loadDb();
 
-    // Reset draft fields
     setCurrentPresMeds([]);
     setPresNotes("");
+  };
+
+  // Transfer Patient action
+  const handleTransferPatient = () => {
+    if (!selectedPatient) return;
+
+    const currentDb = getMediSyncDb();
+    const otherDoc = currentDb.users.find(u => u.uid === transferDoctorId);
+    if (!otherDoc) return;
+
+    // Log the transfer in patient medical record history
+    const patientInDb = currentDb.patients.find(p => p.uid === selectedPatient.uid);
+    if (patientInDb) {
+      patientInDb.history.unshift({
+        date: new Date().toISOString().split("T")[0],
+        diagnosis: `Patient transferred to ${otherDoc.name} by ${doctorProfile?.name || "Dr. Alexander Marcus"}. Transferred live telemetry cuffs, ECG logs, and reports history.`,
+        doctor: doctorProfile?.name || "Dr. Alexander Marcus"
+      });
+    }
+
+    // Re-route active appointments to the new doctor
+    currentDb.appointments.forEach(apt => {
+      if (apt.patientId === selectedPatient.uid && apt.status === "scheduled") {
+        apt.doctorId = otherDoc.uid;
+        apt.doctorName = otherDoc.name;
+      }
+    });
+
+    // Update workloads
+    const currentDoc = currentDb.users.find(u => u.uid === doctorId);
+    if (currentDoc) currentDoc.workload = Math.max(0, (currentDoc.workload || 1) - 1);
+    otherDoc.workload = (otherDoc.workload || 0) + 1;
+
+    saveMediSyncDb(currentDb);
+    loadDb();
+
+    setTransferSuccess(true);
+    setTimeout(() => {
+      setTransferSuccess(false);
+      // Switch selected patient since they are no longer in this doctor's primary queue
+      const remainingPatients = currentDb.patients.filter(p => p.uid !== selectedPatient.uid);
+      if (remainingPatients.length > 0) {
+        setSelectedPatientId(remainingPatients[0].uid);
+      }
+    }, 2000);
+
+    // Broadcast storage update
+    window.dispatchEvent(new Event("storage"));
   };
 
   const resolveAlert = (alertId: string) => {
@@ -107,9 +161,9 @@ export default function DoctorDashboard() {
     }
     saveMediSyncDb(currentDb);
     loadDb();
+    window.dispatchEvent(new Event("storage"));
   };
 
-  // Perform AI vital evaluation on selected patient
   const patientVitals = selectedPatient?.vitals || { heartRate: 70, spo2: 98, temperature: 36.6, systolic: 120, diastolic: 80, glucose: 100 };
   const aiReport = analyzeVitals(
     patientVitals.heartRate,
@@ -121,9 +175,12 @@ export default function DoctorDashboard() {
   );
 
   return (
-    <div className="min-h-screen bg-background pb-12 text-zinc-100">
+    <AuthGuard allowedRoles={["doctor"]}>
+      <div className="min-h-screen bg-luxury-pureBlack pb-12 text-zinc-100 relative">
+      <div className="absolute inset-0 bg-grid-pattern opacity-10 pointer-events-none" />
+
       {/* Header Banner */}
-      <div className="bg-zinc-950 border-b border-zinc-900 py-6">
+      <div className="bg-luxury-pureBlack border-b border-luxury-goldRoyal/10 py-6 relative z-10">
         <div className="max-w-7xl mx-auto px-6 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Link href="/" className="p-2 hover:bg-zinc-900 rounded-lg text-zinc-400 hover:text-white transition-colors">
@@ -132,50 +189,50 @@ export default function DoctorDashboard() {
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-2xl font-extrabold tracking-tight">{doctorProfile?.name || "Dr. Alexander Marcus"}</h1>
-                <span className="text-xs px-2.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 font-semibold uppercase">Clinical Practitioner</span>
+                <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-luxury-blueMedical/10 text-luxury-blueMedical border border-luxury-blueMedical/20 font-mono uppercase font-bold">Clinical Specialist</span>
               </div>
-              <p className="text-xs text-zinc-400 mt-0.5">{doctorProfile?.hospitalAffiliation || "Mayo Clinic"} • License ID: {doctorProfile?.licenseNumber || "LIC-88290-A"}</p>
+              <p className="text-[10px] text-zinc-400 font-mono mt-0.5">{doctorProfile?.hospitalAffiliation || "Mayo Clinic"} • License ID: {doctorProfile?.licenseNumber || "LIC-88290-A"}</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-zinc-900 border border-zinc-800 text-xs">
-            <span className="inline-block w-2 h-2 bg-emerald-500 rounded-full animate-ping" />
-            <span className="text-zinc-400 font-mono">Clinical Stream: </span>
-            <span className="text-emerald-400 font-bold font-mono">ONLINE</span>
+          <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-luxury-richBlack border border-luxury-goldRoyal/10 text-xs">
+            <span className="inline-block w-2.5 h-2.5 bg-luxury-greenEmerald rounded-full animate-pulse" />
+            <span className="text-zinc-500 font-mono">Status: </span>
+            <span className="text-luxury-greenEmerald font-bold font-mono">Available</span>
           </div>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-6 mt-8 grid grid-cols-1 lg:grid-cols-4 gap-8">
+      <div className="max-w-7xl mx-auto px-6 mt-8 grid grid-cols-1 lg:grid-cols-4 gap-8 relative z-10">
         
         {/* Left Side: Assigned Patients List & Active Alerts */}
         <div className="lg:col-span-1 space-y-6">
           
           {/* Active Alerts Panel */}
-          <div className="glass-panel p-5 rounded-2xl border border-white/5 bg-red-950/5">
-            <h3 className="text-sm font-bold text-red-400 flex items-center gap-1.5 uppercase tracking-wide mb-4">
-              <AlertOctagon size={16} /> Clinical Emergencies ({activeAlerts.length})
+          <div className="glass-panel p-5 rounded-2xl border border-luxury-redCrimson/20 bg-luxury-redCrimson/5 animate-glow-gold">
+            <h3 className="text-xs font-bold text-luxury-redCrimson flex items-center gap-1.5 uppercase tracking-wider mb-4">
+              <AlertOctagon size={14} className="animate-bounce" /> Vitals Alerts ({activeAlerts.length})
             </h3>
             
             <div className="space-y-3 max-h-[220px] overflow-y-auto">
               {activeAlerts.length === 0 ? (
-                <p className="text-xs text-zinc-500 text-center py-4">No active emergencies</p>
+                <p className="text-[10px] text-zinc-500 text-center py-4 italic">Systems stable. No notifications.</p>
               ) : (
                 activeAlerts.map((alert) => (
-                  <div key={alert.id} className="p-3 bg-zinc-900/60 rounded-xl border border-red-500/10 flex flex-col gap-2 text-xs">
+                  <div key={alert.id} className="p-3 bg-luxury-pureBlack rounded-xl border border-luxury-redCrimson/10 flex flex-col gap-2 text-xs">
                     <div className="flex justify-between items-start">
                       <div>
-                        <p className="font-bold text-white">{alert.patientName}</p>
-                        <p className="text-[10px] text-red-400 font-semibold">{alert.metric}: {alert.value}</p>
+                        <p className="font-bold text-white text-[11px]">{alert.patientName}</p>
+                        <p className="text-[9px] text-luxury-redCrimson font-bold font-mono mt-0.5">{alert.metric}: {alert.value}</p>
                       </div>
                       <button 
                         onClick={() => resolveAlert(alert.id)}
-                        className="p-1 bg-red-500/20 hover:bg-red-500 text-red-400 hover:text-white rounded transition-colors text-[9px] uppercase font-bold"
+                        className="px-2 py-0.5 bg-luxury-redCrimson/15 hover:bg-luxury-redCrimson text-luxury-redCrimson hover:text-white rounded transition-colors text-[8px] uppercase font-bold"
                       >
-                        Resolve
+                        Clear
                       </button>
                     </div>
-                    <p className="text-[9px] text-zinc-500 font-mono">Time: {new Date(alert.timestamp).toLocaleTimeString()}</p>
+                    <p className="text-[8px] text-zinc-500 font-mono">Logged: {new Date(alert.timestamp).toLocaleTimeString()}</p>
                   </div>
                 ))
               )}
@@ -183,9 +240,9 @@ export default function DoctorDashboard() {
           </div>
 
           {/* Patient Registry */}
-          <div className="glass-panel p-5 rounded-2xl border border-white/5">
-            <h3 className="text-sm font-bold mb-4 flex items-center gap-1.5 text-zinc-400">
-              <Users size={16} /> Assigned Patients ({db.patients.length})
+          <div className="glass-panel p-5 rounded-2xl border border-luxury-goldRoyal/10 bg-luxury-richBlack/60">
+            <h3 className="text-xs font-bold mb-4 flex items-center gap-1.5 text-zinc-400 uppercase tracking-widest font-mono">
+              <Users size={14} className="text-luxury-goldRoyal" /> Patient Roster
             </h3>
             
             <div className="space-y-2">
@@ -199,23 +256,20 @@ export default function DoctorDashboard() {
                     onClick={() => setSelectedPatientId(pat.uid)}
                     className={`w-full text-left p-3.5 rounded-xl border transition-all flex items-center justify-between ${
                       isSelected
-                        ? "bg-cyan-500/15 border-cyan-500/40 shadow-lg shadow-cyan-500/5 text-white"
+                        ? "bg-luxury-goldRoyal/15 border-luxury-goldRoyal/55 shadow-lg text-white"
                         : hasAlert
-                        ? "bg-red-500/10 border-red-500/30 text-white animate-pulse-fast"
-                        : "bg-zinc-950/60 border-zinc-900/60 hover:bg-zinc-900/40 text-zinc-300"
+                        ? "bg-luxury-redCrimson/10 border-luxury-redCrimson/30 text-white animate-pulse"
+                        : "bg-luxury-pureBlack border-zinc-900 hover:bg-zinc-900/40 text-zinc-300"
                     }`}
                   >
                     <div>
-                      <h4 className="text-sm font-bold">{pat.name}</h4>
-                      <p className="text-[10px] text-zinc-400 mt-0.5">Age: {pat.age} • Device: {pat.connectedDevice?.deviceId || "None"}</p>
+                      <h4 className="text-xs font-bold">{pat.name}</h4>
+                      <p className="text-[9px] text-zinc-500 mt-0.5 font-mono">Age: {pat.age} • Device: {pat.connectedDevice?.deviceId || "None"}</p>
                     </div>
                     <div className="flex flex-col items-end gap-1">
-                      <span className={`text-[10px] font-mono font-bold ${hasAlert ? "text-red-400" : "text-emerald-400"}`}>
+                      <span className={`text-[10px] font-mono font-extrabold ${hasAlert ? "text-luxury-redCrimson" : "text-luxury-greenEmerald"}`}>
                         {pat.vitals.heartRate} bpm
                       </span>
-                      {hasAlert && (
-                        <span className="w-1.5 h-1.5 bg-red-500 rounded-full" />
-                      )}
                     </div>
                   </button>
                 );
@@ -224,70 +278,68 @@ export default function DoctorDashboard() {
           </div>
         </div>
 
-        {/* Center: Selected Patient Live Telemetry & ECG Wave */}
+        {/* Center: Live Telemetry Grid */}
         {selectedPatient ? (
           <div className="lg:col-span-2 space-y-6">
             
-            {/* Selected Patient Overview Header */}
-            <div className="glass-panel p-6 rounded-2xl border border-white/5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            {/* Selected Patient Header */}
+            <div className="glass-panel p-6 rounded-2xl border border-luxury-goldRoyal/10 bg-luxury-richBlack/60 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
               <div>
-                <h2 className="text-xl font-bold">{selectedPatient.name} Live Stream</h2>
-                <p className="text-xs text-zinc-400 mt-1">Allergies: {selectedPatient.allergies.join(", ") || "None"} • Active Medications: {selectedPatient.medications.join(", ") || "None"}</p>
+                <h2 className="text-lg font-bold text-white">{selectedPatient.name} Telemetry Stream</h2>
+                <p className="text-[10px] text-zinc-400 mt-1">Allergies: {selectedPatient.allergies.join(", ")} • Medications: {selectedPatient.medications.join(", ")}</p>
               </div>
               
               <Link 
                 href="/consultation" 
-                className="px-4 py-2 bg-gradient-to-r from-violet-600 to-cyan-500 text-white rounded-xl text-xs font-bold transition-transform hover:scale-[1.02] flex items-center gap-1.5"
+                className="px-4 py-2 bg-luxury-goldRoyal hover:bg-luxury-goldRoyal/90 text-luxury-pureBlack rounded-xl text-[10px] font-extrabold uppercase tracking-wider transition-transform hover:scale-[1.02] flex items-center gap-1.5 border border-luxury-goldRoyal/30 shadow-lg shadow-luxury-goldRoyal/10"
               >
-                <Video size={14} /> Start Consultation Room
+                <Video size={12} /> Open Consult Room
               </Link>
             </div>
 
-            {/* Vitals Cards Grid */}
+            {/* Vitals Grid widgets */}
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-              <div className="glass-panel p-4 rounded-xl border border-white/5 text-center">
-                <p className="text-[10px] text-zinc-500 font-mono">HEART RATE</p>
-                <p className="text-2xl font-extrabold text-red-400 mt-2 flex items-center justify-center gap-1">{selectedPatient.vitals.heartRate} <span className="text-[10px] text-zinc-400">bpm</span></p>
+              <div className="glass-panel p-4 rounded-xl border border-white/5 bg-luxury-pureBlack/60 text-center">
+                <p className="text-[9px] text-zinc-500 font-mono uppercase tracking-wider">HEART RATE</p>
+                <p className="text-xl font-extrabold text-luxury-redCrimson mt-2 font-mono">{selectedPatient.vitals.heartRate} bpm</p>
               </div>
               
-              <div className="glass-panel p-4 rounded-xl border border-white/5 text-center">
-                <p className="text-[10px] text-zinc-500 font-mono">SPO2</p>
-                <p className="text-2xl font-extrabold text-cyan-400 mt-2">{selectedPatient.vitals.spo2}%</p>
+              <div className="glass-panel p-4 rounded-xl border border-white/5 bg-luxury-pureBlack/60 text-center">
+                <p className="text-[9px] text-zinc-500 font-mono uppercase tracking-wider">SPO2</p>
+                <p className="text-xl font-extrabold text-luxury-blueElectric mt-2 font-mono">{selectedPatient.vitals.spo2}%</p>
               </div>
 
-              <div className="glass-panel p-4 rounded-xl border border-white/5 text-center">
-                <p className="text-[10px] text-zinc-500 font-mono">TEMPERATURE</p>
-                <p className="text-2xl font-extrabold text-orange-400 mt-2">{selectedPatient.vitals.temperature}°C</p>
+              <div className="glass-panel p-4 rounded-xl border border-white/5 bg-luxury-pureBlack/60 text-center">
+                <p className="text-[9px] text-zinc-500 font-mono uppercase tracking-wider">TEMPERATURE</p>
+                <p className="text-xl font-extrabold text-luxury-goldRoyal mt-2 font-mono">{selectedPatient.vitals.temperature}°C</p>
               </div>
 
-              <div className="glass-panel p-4 rounded-xl border border-white/5 text-center">
-                <p className="text-[10px] text-zinc-500 font-mono">BP (SYS/DIA)</p>
-                <p className="text-xl font-extrabold text-emerald-400 mt-2">{selectedPatient.vitals.systolic}/{selectedPatient.vitals.diastolic}</p>
+              <div className="glass-panel p-4 rounded-xl border border-white/5 bg-luxury-pureBlack/60 text-center">
+                <p className="text-[9px] text-zinc-500 font-mono uppercase tracking-wider">BP (SYS/DIA)</p>
+                <p className="text-lg font-extrabold text-luxury-greenEmerald mt-2 font-mono">{selectedPatient.vitals.systolic}/{selectedPatient.vitals.diastolic}</p>
               </div>
 
-              <div className="glass-panel p-4 rounded-xl border border-white/5 text-center">
-                <p className="text-[10px] text-zinc-500 font-mono">GLUCOSE</p>
-                <p className="text-2xl font-extrabold text-amber-500 mt-2">{selectedPatient.vitals.glucose}</p>
+              <div className="glass-panel p-4 rounded-xl border border-white/5 bg-luxury-pureBlack/60 text-center">
+                <p className="text-[9px] text-zinc-500 font-mono uppercase tracking-wider">GLUCOSE</p>
+                <p className="text-xl font-extrabold text-amber-500 mt-2 font-mono">{selectedPatient.vitals.glucose}</p>
               </div>
             </div>
 
-            {/* SVG Live ECG Stream simulation */}
-            <div className="glass-panel p-6 rounded-2xl border border-white/5">
+            {/* SVG Live ECG wave */}
+            <div className="glass-panel p-6 rounded-2xl border border-luxury-goldRoyal/10 bg-luxury-richBlack/60">
               <div className="flex justify-between items-center mb-4">
-                <h3 className="text-sm font-bold flex items-center gap-1.5 text-red-400"><Heart size={16} className="animate-pulse" /> Live ECG Waveform</h3>
-                <span className="text-[10px] text-zinc-500 font-mono">Simulated from Analog Pin A0</span>
+                <h3 className="text-xs font-bold text-luxury-redCrimson flex items-center gap-1.5 uppercase tracking-wider font-mono">Live ECG signal</h3>
+                <span className="text-[9px] text-zinc-400 font-mono">Stream: Active</span>
               </div>
               
-              <div className="w-full bg-zinc-950/90 h-32 border border-zinc-900 rounded-xl relative overflow-hidden flex items-center">
-                {/* ECG Grid Line background */}
-                <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(120,119,198,0.08),rgba(255,255,255,0))]" />
+              <div className="w-full bg-luxury-pureBlack h-32 border border-zinc-900 rounded-xl relative overflow-hidden flex items-center">
+                <div className="absolute inset-0 bg-grid-pattern opacity-10" />
                 
-                {/* SVG Graph path */}
-                <svg className="w-full h-full text-red-500 stroke-2" viewBox="0 0 400 100" preserveAspectRatio="none">
+                <svg className="w-full h-full text-luxury-redCrimson stroke-2" viewBox="0 0 400 100" preserveAspectRatio="none">
                   <path
                     fill="none"
                     stroke="currentColor"
-                    strokeWidth="2.5"
+                    strokeWidth="2"
                     d={
                       selectedPatient.vitals.ecg && selectedPatient.vitals.ecg.length > 0
                         ? `M ${selectedPatient.vitals.ecg.map((val, idx) => `${idx * 10}, ${100 - (val / 150) * 100}`).join(" L ")}`
@@ -298,36 +350,71 @@ export default function DoctorDashboard() {
               </div>
             </div>
 
-            {/* AI Diagnostics Assessment Box */}
-            <div className="glass-panel p-6 rounded-2xl border border-violet-500/20 bg-gradient-to-r from-violet-600/10 to-transparent">
-              <h3 className="text-sm font-bold text-violet-400 flex items-center gap-2 mb-3">
-                <Stethoscope size={16} /> Clinical AI diagnostic summary
+            {/* Clinical AI recommendations */}
+            <div className="glass-panel p-6 rounded-2xl border border-luxury-goldRoyal/10 bg-luxury-richBlack/60">
+              <h3 className="text-xs font-bold text-luxury-goldRoyal flex items-center gap-2 mb-4 uppercase tracking-widest font-mono">
+                <Stethoscope size={16} /> Clinical Diagnostic Insights
               </h3>
               
-              <div className="space-y-4">
-                <div>
-                  <h4 className="text-xs font-semibold text-zinc-300 uppercase tracking-widest font-mono">Evaluated Status</h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2 text-xs">
-                    <div><span className="text-zinc-500">Oxygen Saturation:</span> <span className="font-bold text-white">{aiReport.vitalsStatus.spo2}</span></div>
-                    <div><span className="text-zinc-500">Cardiac rhythm:</span> <span className="font-bold text-white">{aiReport.vitalsStatus.heartRate}</span></div>
-                    <div><span className="text-zinc-500">Temperature log:</span> <span className="font-bold text-white">{aiReport.vitalsStatus.temperature}</span></div>
-                    <div><span className="text-zinc-500">Blood Pressure:</span> <span className="font-bold text-white">{aiReport.vitalsStatus.bloodPressure}</span></div>
+              <div className="space-y-4 text-xs">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div>
+                    <span className="text-[10px] text-zinc-500 font-mono block">CARDIAC RHYTHM</span>
+                    <span className="font-bold text-white">{aiReport.vitalsStatus.heartRate}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-zinc-500 font-mono block">OXYGEN STATUS</span>
+                    <span className="font-bold text-white">{aiReport.vitalsStatus.spo2}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-zinc-500 font-mono block">TEMPERATURE RANGE</span>
+                    <span className="font-bold text-white">{aiReport.vitalsStatus.temperature}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-zinc-500 font-mono block">BLOOD SUGAR STATUS</span>
+                    <span className="font-bold text-white">{aiReport.vitalsStatus.glucose}</span>
                   </div>
                 </div>
 
-                <div className="pt-3 border-t border-zinc-800/80">
-                  <h4 className="text-xs font-semibold text-zinc-300 uppercase tracking-widest font-mono">Clinical Insights</h4>
-                  <p className="text-xs text-zinc-400 mt-1 leading-relaxed">"{aiReport.clinicalInsights}"</p>
+                <div className="pt-3 border-t border-zinc-900">
+                  <span className="text-[10px] text-zinc-400 font-mono block uppercase">Model Insights</span>
+                  <p className="text-zinc-300 mt-1 italic">"{aiReport.clinicalInsights}"</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Doctor Transfer System Interface */}
+            <div className="glass-panel p-6 rounded-2xl border border-luxury-goldRoyal/15 bg-luxury-pureBlack relative overflow-hidden">
+              <div className="flex items-center gap-2 mb-3">
+                <ArrowRightLeft className="text-luxury-goldRoyal" size={16} />
+                <h3 className="text-xs font-bold text-white uppercase tracking-wider font-mono">Clinical Roster Transfer Engine</h3>
+              </div>
+              <p className="text-[10px] text-zinc-400 leading-relaxed mb-4">
+                If you are entering an emergency consult or going off-shift, transfer this patient to another verified doctor. 
+                This transmits patient history logs, notes, and the active wireless telemetry link.
+              </p>
+
+              <div className="flex flex-col sm:flex-row gap-4 items-end justify-between bg-zinc-950 p-4 rounded-xl border border-zinc-900">
+                <div className="w-full sm:w-2/3">
+                  <label className="block text-[9px] text-zinc-500 uppercase tracking-widest font-mono mb-1">Select verified clinician</label>
+                  <select 
+                    value={transferDoctorId}
+                    onChange={(e) => setTransferDoctorId(e.target.value)}
+                    className="w-full bg-zinc-900 border border-zinc-800 text-xs text-zinc-300 px-3 py-2 rounded-lg focus:outline-none"
+                  >
+                    <option value="doc2">Dr. Elizabeth Carter (Stanford Medicine)</option>
+                    <option value="doc1">Dr. Alexander Marcus (Mayo Clinic)</option>
+                  </select>
                 </div>
 
-                <div className="pt-3 border-t border-zinc-800/80">
-                  <h4 className="text-xs font-semibold text-zinc-300 uppercase tracking-widest font-mono">Automated Recommendations</h4>
-                  <ul className="list-disc list-inside text-xs text-zinc-400 space-y-1 mt-1.5">
-                    {aiReport.recommendations.map((rec, i) => (
-                      <li key={i}>{rec}</li>
-                    ))}
-                  </ul>
-                </div>
+                <button
+                  type="button"
+                  onClick={handleTransferPatient}
+                  className="w-full sm:w-auto px-5 py-2 bg-luxury-goldRoyal text-luxury-pureBlack font-bold text-xs rounded-lg uppercase tracking-wider hover:bg-luxury-goldRoyal/90 transition-all flex items-center justify-center gap-1 shrink-0"
+                >
+                  {transferSuccess ? <Check size={12} /> : null}
+                  {transferSuccess ? "Transferred!" : "Commit Transfer"}
+                </button>
               </div>
             </div>
 
@@ -335,99 +422,100 @@ export default function DoctorDashboard() {
         ) : (
           <div className="lg:col-span-2 glass-panel p-12 rounded-2xl border border-white/5 flex flex-col items-center justify-center text-zinc-500">
             <Users size={48} className="mb-4" />
-            <p>Select a patient from the left panel to begin telemetry monitoring</p>
+            <p className="text-xs">Select a patient to begin telemetry checkups</p>
           </div>
         )}
 
-        {/* Right Column: Prescription Generator */}
+        {/* Right Side: Prescription builder */}
         <div className="lg:col-span-1 space-y-6">
-          <div className="glass-panel p-5 rounded-2xl border border-white/5">
-            <h3 className="text-sm font-bold flex items-center gap-1.5 text-violet-400 mb-4">
-              <FileText size={16} /> Prescription Builder
+          <div className="glass-panel p-5 rounded-2xl border border-luxury-goldRoyal/10 bg-luxury-richBlack/60">
+            <h3 className="text-xs font-bold text-luxury-goldRoyal mb-4 uppercase tracking-widest font-mono flex items-center gap-2">
+              <FileText size={14} /> Prescription Draft Form
             </h3>
 
             <form onSubmit={submitPrescription} className="space-y-4">
               <div>
-                <label className="block text-[10px] text-zinc-400 uppercase tracking-wider mb-1">Medication Name</label>
+                <label className="block text-[9px] text-zinc-500 uppercase tracking-wider mb-1">Medicine Name</label>
                 <input 
-                  type="text" 
-                  value={medName}
-                  onChange={(e) => setMedName(e.target.value)}
-                  placeholder="e.g. Metformin" 
-                  className="w-full bg-zinc-900 border border-zinc-800 text-xs px-3 py-2 rounded-lg focus:outline-none placeholder-zinc-700"
+                  type="text" value={medName} onChange={(e) => setMedName(e.target.value)}
+                  placeholder="e.g. Paracetamol" 
+                  className="w-full bg-zinc-900 border border-zinc-800 text-xs px-3 py-2 rounded-lg focus:outline-none placeholder-zinc-700 text-white"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[10px] text-zinc-400 uppercase tracking-wider mb-1">Dosage</label>
+                  <label className="block text-[9px] text-zinc-500 uppercase tracking-wider mb-1">Dosage</label>
                   <input 
-                    type="text" 
-                    value={medDosage}
-                    onChange={(e) => setMedDosage(e.target.value)}
+                    type="text" value={medDosage} onChange={(e) => setMedDosage(e.target.value)}
                     placeholder="e.g. 500mg" 
-                    className="w-full bg-zinc-900 border border-zinc-800 text-xs px-3 py-2 rounded-lg focus:outline-none placeholder-zinc-700"
+                    className="w-full bg-zinc-900 border border-zinc-800 text-xs px-3 py-2 rounded-lg text-center focus:outline-none placeholder-zinc-700 text-white"
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] text-zinc-400 uppercase tracking-wider mb-1">Duration</label>
+                  <label className="block text-[9px] text-zinc-500 uppercase tracking-wider mb-1">Duration</label>
                   <input 
-                    type="text" 
-                    value={medDur}
-                    onChange={(e) => setMedDur(e.target.value)}
-                    placeholder="e.g. 30 Days" 
-                    className="w-full bg-zinc-900 border border-zinc-800 text-xs px-3 py-2 rounded-lg focus:outline-none placeholder-zinc-700"
+                    type="text" value={medDur} onChange={(e) => setMedDur(e.target.value)}
+                    placeholder="e.g. 5 Days" 
+                    className="w-full bg-zinc-900 border border-zinc-800 text-xs px-3 py-2 rounded-lg text-center focus:outline-none placeholder-zinc-700 text-white"
                   />
                 </div>
               </div>
 
-              <div>
-                <label className="block text-[10px] text-zinc-400 uppercase tracking-wider mb-1">Frequency</label>
-                <input 
-                  type="text" 
-                  value={medFreq}
-                  onChange={(e) => setMedFreq(e.target.value)}
-                  placeholder="e.g. Twice Daily" 
-                  className="w-full bg-zinc-900 border border-zinc-800 text-xs px-3 py-2 rounded-lg focus:outline-none placeholder-zinc-700"
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[9px] text-zinc-500 uppercase tracking-wider mb-1">Frequency</label>
+                  <input 
+                    type="text" value={medFreq} onChange={(e) => setMedFreq(e.target.value)}
+                    placeholder="e.g. Twice Daily" 
+                    className="w-full bg-zinc-900 border border-zinc-800 text-xs px-3 py-2 rounded-lg text-center focus:outline-none placeholder-zinc-700 text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[9px] text-zinc-500 uppercase tracking-wider mb-1">Instructions</label>
+                  <select
+                    value={medInst} onChange={(e) => setMedInst(e.target.value)}
+                    className="w-full bg-zinc-900 border border-zinc-800 text-xs px-2 py-2.5 rounded-lg focus:outline-none text-zinc-300"
+                  >
+                    <option value="After Food">After Food</option>
+                    <option value="Before Food">Before Food</option>
+                    <option value="With Water">With Water</option>
+                  </select>
+                </div>
               </div>
 
               <button
-                type="button"
-                onClick={addMedicineToDraft}
-                className="w-full py-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white rounded-lg text-xs font-semibold border border-zinc-800 flex items-center justify-center gap-1 transition-all"
+                type="button" onClick={addMedicineToDraft}
+                className="w-full py-2 bg-zinc-900 hover:bg-zinc-850 text-zinc-300 rounded-lg text-xs font-bold border border-zinc-850 uppercase tracking-wider flex items-center justify-center gap-1 transition-all"
               >
-                <Plus size={14} /> Add Medicine
+                <Plus size={12} /> Add to list
               </button>
 
-              {/* Draft List */}
+              {/* Draft list */}
               {currentPresMeds.length > 0 && (
                 <div className="p-3 bg-zinc-950 rounded-lg border border-zinc-900 space-y-2">
-                  <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-mono">Drafted Medications</p>
+                  <p className="text-[9px] text-zinc-500 uppercase tracking-widest font-mono">Current items</p>
                   {currentPresMeds.map((med, idx) => (
-                    <div key={idx} className="flex justify-between items-center text-[10px]">
+                    <div key={idx} className="flex justify-between items-center text-[10px] border-b border-zinc-900 pb-1">
                       <span className="font-bold text-white">{med.name} ({med.dosage})</span>
-                      <span className="text-zinc-400">{med.frequency} x {med.duration}</span>
+                      <span className="text-zinc-500 font-mono text-[9px]">{med.frequency} • {med.instructions}</span>
                     </div>
                   ))}
                 </div>
               )}
 
               <div>
-                <label className="block text-[10px] text-zinc-400 uppercase tracking-wider mb-1">Physician advice & notes</label>
+                <label className="block text-[9px] text-zinc-500 uppercase tracking-wider mb-1">Additional advice & notes</label>
                 <textarea 
-                  rows={3} 
-                  value={presNotes}
-                  onChange={(e) => setPresNotes(e.target.value)}
-                  placeholder="Clinical instructions, follow ups..." 
-                  className="w-full bg-zinc-900 border border-zinc-800 text-xs px-3 py-2 rounded-lg focus:outline-none placeholder-zinc-700"
+                  rows={3} value={presNotes} onChange={(e) => setPresNotes(e.target.value)}
+                  placeholder="Clinical notes..." 
+                  className="w-full bg-zinc-900 border border-zinc-800 text-xs px-3 py-2 rounded-lg focus:outline-none placeholder-zinc-700 text-white"
                 />
               </div>
 
               <button
-                type="submit"
-                disabled={currentPresMeds.length === 0}
-                className="w-full py-2.5 bg-primary disabled:bg-zinc-800 disabled:text-zinc-600 text-white rounded-xl text-xs font-bold transition-all hover:opacity-95"
+                type="submit" disabled={currentPresMeds.length === 0}
+                className="w-full py-3 bg-luxury-goldRoyal disabled:bg-zinc-900 disabled:text-zinc-600 text-luxury-pureBlack font-bold rounded-xl text-xs uppercase tracking-wider transition-all"
               >
                 Transmit Prescription
               </button>
@@ -437,5 +525,6 @@ export default function DoctorDashboard() {
 
       </div>
     </div>
+    </AuthGuard>
   );
 }

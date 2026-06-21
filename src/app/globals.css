@@ -4,44 +4,44 @@
 
 @layer base {
   :root {
-    --background: 240 6% 97%;
-    --foreground: 240 10% 4%;
+    --background: 210 20% 98%;
+    --foreground: 224 71.4% 4.1%;
     --card: 0 0% 100%;
-    --card-foreground: 240 10% 3.9%;
-    --primary: 262.1 83.3% 57.8%;
+    --card-foreground: 224 71.4% 9.0%;
+    --primary: 220.9 89.3% 48.4%;
     --primary-foreground: 210 20% 98%;
-    --secondary: 240 4.8% 95.9%;
-    --secondary-foreground: 240 5.9% 10%;
-    --muted: 240 4.8% 95.9%;
-    --muted-foreground: 240 3.8% 46.1%;
-    --accent: 240 4.8% 95.9%;
-    --accent-foreground: 240 5.9% 10%;
+    --secondary: 220 14.3% 95.9%;
+    --secondary-foreground: 220.9 39.3% 11%;
+    --muted: 220 14.3% 95.9%;
+    --muted-foreground: 220 8.9% 46.1%;
+    --accent: 220 14.3% 95.9%;
+    --accent-foreground: 220.9 39.3% 11%;
     --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 240 5.9% 90%;
-    --input: 240 5.9% 90%;
-    --ring: 262.1 83.3% 57.8%;
-    --radius: 0.75rem;
+    --destructive-foreground: 210 20% 98%;
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 224 71.4% 4.1%;
+    --radius: 1rem;
   }
 
   .dark {
-    --background: 240 10% 4%;
-    --foreground: 0 0% 98%;
-    --card: 240 10% 6%;
-    --card-foreground: 0 0% 98%;
-    --primary: 263.4 70% 50.4%;
-    --primary-foreground: 210 20% 98%;
+    --background: 240 10% 2%;
+    --foreground: 210 20% 98%;
+    --card: 240 10% 3.5%;
+    --card-foreground: 210 20% 98%;
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 222.2 47.4% 11.2%;
     --secondary: 240 3.7% 15.9%;
-    --secondary-foreground: 240 5% 90%;
+    --secondary-foreground: 210 20% 98%;
     --muted: 240 3.7% 15.9%;
     --muted-foreground: 240 5% 64.9%;
     --accent: 240 3.7% 15.9%;
-    --accent-foreground: 240 5% 90%;
+    --accent-foreground: 210 20% 98%;
     --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 240 3.7% 15.9%;
+    --destructive-foreground: 210 20% 98%;
+    --border: 240 5% 10%;
     --input: 240 3.7% 15.9%;
-    --ring: 263.4 70% 50.4%;
+    --ring: 240 4.9% 83.9%;
   }
 }
 
@@ -52,40 +52,63 @@
   body {
     @apply bg-background text-foreground;
     font-feature-settings: "rlig" 1, "calt" 1;
+    background-attachment: fixed;
   }
 }
 
-/* Glassmorphism Classes */
+/* Luxury Premium Background */
+.dark body {
+  background: radial-gradient(circle at 50% 0%, rgba(0, 122, 255, 0.08) 0%, rgba(5, 5, 5, 1) 75%), #050505;
+}
+
+/* Luxury Glassmorphic Panels */
 .glass-panel {
-  background: rgba(255, 255, 255, 0.45);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   border: 1px solid rgba(255, 255, 255, 0.4);
+  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.04);
 }
 
 .dark .glass-panel {
-  background: rgba(10, 10, 12, 0.65);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.glass-panel-heavy {
-  background: rgba(255, 255, 255, 0.7);
-  backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.5);
-}
-
-.dark .glass-panel-heavy {
-  background: rgba(12, 12, 16, 0.85);
+  background: rgba(11, 11, 11, 0.75);
   backdrop-filter: blur(24px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(212, 175, 55, 0.08);
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.8), inset 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+/* Gold glow variants */
+.glass-gold-glow {
+  @apply animate-glow-gold;
+  border: 1px solid rgba(212, 175, 55, 0.25) !important;
+}
+
+/* Blue glow variants */
+.glass-blue-glow {
+  @apply animate-glow-blue;
+  border: 1px solid rgba(0, 191, 255, 0.25) !important;
+}
+
+/* Grid Background Layer */
+.bg-grid-pattern {
+  background-size: 50px 50px;
+  background-image: 
+    linear-gradient(to right, rgba(255, 255, 255, 0.015) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.015) 1px, transparent 1px);
+}
+
+.dark .bg-grid-pattern {
+  background-size: 50px 50px;
+  background-image: 
+    linear-gradient(to right, rgba(212, 175, 55, 0.012) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(212, 175, 55, 0.012) 1px, transparent 1px);
 }
 
 /* Custom Scrollbars */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 
 ::-webkit-scrollbar-track {
@@ -93,29 +116,23 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(156, 163, 175, 0.2);
+  background: rgba(212, 175, 55, 0.15);
   border-radius: 9999px;
 }
 
-.dark ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
-}
-
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(156, 163, 175, 0.4);
+  background: rgba(212, 175, 55, 0.35);
 }
 
-/* Grid Background */
-.bg-grid-pattern {
-  background-size: 40px 40px;
-  background-image: 
-    linear-gradient(to right, rgba(128, 128, 128, 0.05) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(128, 128, 128, 0.05) 1px, transparent 1px);
+/* Heartbeat Line Drawing Keyframes */
+@keyframes heartbeatLine {
+  to {
+    stroke-dashoffset: 0;
+  }
 }
 
-.dark .bg-grid-pattern {
-  background-size: 40px 40px;
-  background-image: 
-    linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+.heartbeat-path {
+  stroke-dasharray: 1000;
+  stroke-dashoffset: 1000;
+  animation: heartbeatLine 5s linear infinite;
 }

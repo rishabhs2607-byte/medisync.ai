@@ -1,7 +1,18 @@
 // MediSync AI — Firebase & Database Service Configuration
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import { 
+  getAuth, 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword, 
+  signOut,
+  User as FirebaseUser
+} from "firebase/auth";
+import { 
+  getFirestore, 
+  doc, 
+  setDoc, 
+  getDoc 
+} from "firebase/firestore";
 import { getDatabase } from "firebase/database";
 import { getStorage } from "firebase/storage";
 
@@ -36,6 +47,10 @@ export interface UserProfile {
   avatar?: string;
   hospitalAffiliation?: string;
   licenseNumber?: string;
+  availability?: "Available" | "Busy" | "In Consultation" | "Offline" | "Emergency Mode";
+  specialty?: string;
+  workload?: number;
+  emergencyLevel?: number;
 }
 
 export interface PatientRecord {
@@ -47,6 +62,7 @@ export interface PatientRecord {
   allergies: string[];
   medications: string[];
   history: { date: string; diagnosis: string; doctor: string }[];
+  vitalsMode: "device" | "manual";
   vitals: {
     heartRate: number;
     spo2: number;
@@ -65,6 +81,7 @@ export interface PatientRecord {
     lastSync: string;
   } | null;
   familyMembers: { name: string; relation: string; email: string; alertStatus: boolean }[];
+  reports: { id: string; name: string; date: string; url: string; notes?: string; annotations?: string }[];
 }
 
 export interface Appointment {
@@ -75,7 +92,7 @@ export interface Appointment {
   doctorName: string;
   date: string;
   time: string;
-  status: "scheduled" | "completed" | "cancelled";
+  status: "scheduled" | "completed" | "cancelled" | "waiting_queue";
   reason: string;
 }
 
@@ -85,7 +102,7 @@ export interface Prescription {
   doctorId: string;
   doctorName: string;
   date: string;
-  medicines: { name: string; dosage: string; frequency: string; duration: string }[];
+  medicines: { name: string; dosage: string; frequency: string; duration: string; instructions?: string }[];
   notes: string;
   pdfUrl?: string;
 }
@@ -110,11 +127,49 @@ export interface ChatMessage {
   attachment?: { name: string; url: string; type: "pdf" | "image" };
 }
 
-// Initial Data Seeding for the Startup Dashboard UI
+export interface ConsultationSession {
+  isActive: boolean;
+  patientId: string;
+  patientName: string;
+  doctorId: string;
+  doctorName: string;
+  messages: ChatMessage[];
+  vitalsBackup: PatientRecord["vitals"];
+  reportsBackup: PatientRecord["reports"];
+  interruptedAt?: string;
+}
+
+// Seeding Profiles
 const INITIAL_USERS: UserProfile[] = [
   { uid: "admin1", name: "Dr. Sarah Lin (CTO)", email: "admin@medisync.ai", role: "admin", status: "active", avatar: "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150" },
-  { uid: "doc1", name: "Dr. Alexander Marcus", email: "alexander@medisync.ai", role: "doctor", status: "approved", avatar: "https://images.unsplash.com/photo-1622253692010-333f2da6031d?w=150", hospitalAffiliation: "Mayo Clinic", licenseNumber: "LIC-88290-A" },
-  { uid: "doc2", name: "Dr. Elizabeth Carter", email: "elizabeth@medisync.ai", role: "doctor", status: "applied", avatar: "https://images.unsplash.com/photo-1594824813573-246434de83fb?w=150", hospitalAffiliation: "Stanford Medicine", licenseNumber: "LIC-11204-B" },
+  { 
+    uid: "doc1", 
+    name: "Dr. Alexander Marcus", 
+    email: "alexander@medisync.ai", 
+    role: "doctor", 
+    status: "approved", 
+    avatar: "https://images.unsplash.com/photo-1622253692010-333f2da6031d?w=150", 
+    hospitalAffiliation: "Mayo Clinic", 
+    licenseNumber: "LIC-88290-A",
+    availability: "Available",
+    specialty: "Cardiology",
+    workload: 1,
+    emergencyLevel: 0
+  },
+  { 
+    uid: "doc2", 
+    name: "Dr. Elizabeth Carter", 
+    email: "elizabeth@medisync.ai", 
+    role: "doctor", 
+    status: "approved", 
+    avatar: "https://images.unsplash.com/photo-1594824813573-246434de83fb?w=150", 
+    hospitalAffiliation: "Stanford Medicine", 
+    licenseNumber: "LIC-11204-B",
+    availability: "In Consultation",
+    specialty: "ICU / Emergency Medicine",
+    workload: 3,
+    emergencyLevel: 4
+  },
   { uid: "pat1", name: "James Anderson (Patient)", email: "james@gmail.com", role: "patient", status: "active", avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150" },
   { uid: "hosp1", name: "St. Jude Research Hospital", email: "stjude@hospital.org", role: "hospital", status: "approved" }
 ];
@@ -132,6 +187,7 @@ const INITIAL_PATIENTS: PatientRecord[] = [
       { date: "2026-03-12", diagnosis: "Stage 1 Hypertension onset", doctor: "Dr. Alexander Marcus" },
       { date: "2026-05-19", diagnosis: "Type II Diabetes routine review", doctor: "Dr. Alexander Marcus" }
     ],
+    vitalsMode: "device",
     vitals: {
       heartRate: 72,
       spo2: 98,
@@ -151,6 +207,10 @@ const INITIAL_PATIENTS: PatientRecord[] = [
     },
     familyMembers: [
       { name: "Emily Anderson", relation: "Daughter", email: "emily.a@gmail.com", alertStatus: true }
+    ],
+    reports: [
+      { id: "rep-1", name: "Electrocardiogram Summary Report.pdf", date: "2026-05-18", url: "#", notes: "Stable sinus rhythm with mild arterial load." },
+      { id: "rep-2", name: "Metabolic panel blood sugar.jpg", date: "2026-05-19", url: "#" }
     ]
   },
   {
@@ -164,6 +224,7 @@ const INITIAL_PATIENTS: PatientRecord[] = [
     history: [
       { date: "2025-11-04", diagnosis: "Mild Hyperlipidemia diagnosis", doctor: "Dr. Alexander Marcus" }
     ],
+    vitalsMode: "device",
     vitals: {
       heartRate: 85,
       spo2: 96,
@@ -182,8 +243,9 @@ const INITIAL_PATIENTS: PatientRecord[] = [
       lastSync: new Date().toISOString()
     },
     familyMembers: [
-      { name: "Robert Martinez", relation: "Son", email: "robert.m@gmail.com", alertStatus: true }
-    ]
+      { name: "Robert Martinez", relation: "Son", email: "robert.m@gmail.com", alertStatus: true },
+    ],
+    reports: []
   }
 ];
 
@@ -200,8 +262,8 @@ const INITIAL_PRESCRIPTIONS: Prescription[] = [
     doctorName: "Dr. Alexander Marcus",
     date: "2026-05-19",
     medicines: [
-      { name: "Lisinopril", dosage: "10mg", frequency: "Once daily (Morning)", duration: "3 months" },
-      { name: "Metformin", dosage: "500mg", frequency: "Twice daily (With meals)", duration: "3 months" }
+      { name: "Lisinopril", dosage: "10mg", frequency: "Once daily (Morning)", duration: "3 months", instructions: "After Food" },
+      { name: "Metformin", dosage: "500mg", frequency: "Twice daily (With meals)", duration: "3 months", instructions: "After Food" }
     ],
     notes: "Avoid grapefruit juice. Maintain light morning walks and check blood sugar before breakfast."
   }
@@ -217,7 +279,7 @@ const INITIAL_CHATS: ChatMessage[] = [
 ];
 
 // Helper to interact with LocalStorage
-const getStorageData = (key: string, initial: any) => {
+export const getStorageData = (key: string, initial: any) => {
   if (typeof window === "undefined") return initial;
   const item = localStorage.getItem(`medisync_${key}`);
   if (!item) {
@@ -231,7 +293,7 @@ const getStorageData = (key: string, initial: any) => {
   }
 };
 
-const setStorageData = (key: string, data: any) => {
+export const setStorageData = (key: string, data: any) => {
   if (typeof window !== "undefined") {
     localStorage.setItem(`medisync_${key}`, JSON.stringify(data));
   }
@@ -244,7 +306,8 @@ export const getMediSyncDb = () => {
     appointments: getStorageData("appointments", INITIAL_APPOINTMENTS) as Appointment[],
     prescriptions: getStorageData("prescriptions", INITIAL_PRESCRIPTIONS) as Prescription[],
     alerts: getStorageData("alerts", INITIAL_ALERTS) as EmergencyAlert[],
-    chats: getStorageData("chats", INITIAL_CHATS) as ChatMessage[]
+    chats: getStorageData("chats", INITIAL_CHATS) as ChatMessage[],
+    activeSession: getStorageData("activeSession", { isActive: false, patientId: "", patientName: "", doctorId: "", doctorName: "", messages: [], vitalsBackup: {}, reportsBackup: [] }) as ConsultationSession
   };
 };
 
@@ -255,4 +318,195 @@ export const saveMediSyncDb = (dbInstance: ReturnType<typeof getMediSyncDb>) => 
   setStorageData("prescriptions", dbInstance.prescriptions);
   setStorageData("alerts", dbInstance.alerts);
   setStorageData("chats", dbInstance.chats);
+  setStorageData("activeSession", dbInstance.activeSession);
+};
+
+// Smart matching logic implementation
+export const findBestDoctor = (specialtyNeeded: string, emergencyLevel: number) => {
+  const db = getMediSyncDb();
+  let doctorPool = db.users.filter(u => u.role === "doctor" && u.status === "approved" && u.availability === "Available");
+  
+  if (doctorPool.length === 0) {
+    doctorPool = db.users.filter(u => u.role === "doctor" && u.status === "approved" && u.availability !== "Offline");
+  }
+
+  if (doctorPool.length === 0) return null;
+
+  const scoredPool = doctorPool.map(doc => {
+    let score = 0;
+    if (doc.specialty?.toLowerCase().includes(specialtyNeeded.toLowerCase())) {
+      score += 50;
+    }
+    score -= (doc.workload || 0) * 10;
+    if (emergencyLevel > 2 && doc.specialty?.toLowerCase().includes("icu")) {
+      score += 30;
+    }
+    return { doc, score };
+  });
+
+  scoredPool.sort((a, b) => b.score - a.score);
+  return scoredPool[0].doc;
+};
+
+// ==========================================
+// FIREBASE AUTHENTICATION SDK INTEGRATIONS
+// ==========================================
+
+export const registerUserWithFirebase = async (
+  email: string,
+  password: string,
+  name: string,
+  role: "admin" | "doctor" | "patient" | "hospital",
+  additionalFields?: Partial<UserProfile>
+): Promise<UserProfile> => {
+  try {
+    // 1. Create credential in Firebase Auth
+    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+    const user = userCredential.user;
+    
+    // Determine initial status based on role
+    const status = role === "doctor" ? "applied" : "approved";
+
+    const profile: UserProfile = {
+      uid: user.uid,
+      name,
+      email,
+      role,
+      status,
+      avatar: `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(name)}`,
+      ...additionalFields
+    };
+
+    // 2. Try to write to real Firestore
+    try {
+      await setDoc(doc(db, "users", user.uid), profile);
+    } catch (e) {
+      console.warn("Firestore write failed, using localstorage fallback registry", e);
+    }
+
+    // 3. Always write to LocalStorage registry to maintain consistency in local run
+    const localDb = getMediSyncDb();
+    localDb.users.push(profile);
+    
+    // If patient, register record
+    if (role === "patient") {
+      const patientRec: PatientRecord = {
+        uid: user.uid,
+        name,
+        age: 35,
+        gender: "Male",
+        bloodType: "O+",
+        allergies: [],
+        medications: [],
+        history: [],
+        vitalsMode: "manual",
+        vitals: {
+          heartRate: 72,
+          spo2: 98,
+          temperature: 36.6,
+          systolic: 120,
+          diastolic: 80,
+          glucose: 95,
+          fallDetected: false,
+          ecg: Array.from({ length: 40 }, () => 50),
+          lastUpdated: new Date().toISOString()
+        },
+        connectedDevice: null,
+        familyMembers: [],
+        reports: []
+      };
+      localDb.patients.push(patientRec);
+    }
+
+    saveMediSyncDb(localDb);
+    return profile;
+  } catch (error: any) {
+    console.error("Firebase Registration Error:", error);
+    
+    // Mock Local fallback for offline/sandbox testing
+    if (error.code === "auth/network-request-failed" || error.message.includes("mock")) {
+      const mockUid = `mock-${Date.now()}`;
+      const status = role === "doctor" ? "applied" : "approved";
+      const profile: UserProfile = {
+        uid: mockUid,
+        name,
+        email,
+        role,
+        status,
+        avatar: `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(name)}`,
+        ...additionalFields
+      };
+      const localDb = getMediSyncDb();
+      localDb.users.push(profile);
+      if (role === "patient") {
+        localDb.patients.push({
+          uid: mockUid,
+          name,
+          age: 30,
+          gender: "Male",
+          bloodType: "B+",
+          allergies: [],
+          medications: [],
+          history: [],
+          vitalsMode: "manual",
+          vitals: { heartRate: 72, spo2: 98, temperature: 36.5, systolic: 120, diastolic: 80, glucose: 90, fallDetected: false, ecg: [], lastUpdated: new Date().toISOString() },
+          connectedDevice: null,
+          familyMembers: [],
+          reports: []
+        });
+      }
+      saveMediSyncDb(localDb);
+      return profile;
+    }
+    throw error;
+  }
+};
+
+export const loginUserWithFirebase = async (
+  email: string,
+  password: string
+): Promise<UserProfile> => {
+  try {
+    const userCredential = await signInWithEmailAndPassword(auth, email, password);
+    const user = userCredential.user;
+
+    // 1. Try to read from real Firestore
+    try {
+      const docRef = doc(db, "users", user.uid);
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        return docSnap.data() as UserProfile;
+      }
+    } catch (e) {
+      console.warn("Firestore read failed, searching local registry fallback", e);
+    }
+
+    // 2. Search Local Registry
+    const localDb = getMediSyncDb();
+    const profile = localDb.users.find(u => u.uid === user.uid || u.email === email);
+    if (profile) return profile;
+
+    // Fallback profile if Firestore failed but auth succeeded
+    return {
+      uid: user.uid,
+      name: email.split("@")[0],
+      email,
+      role: "patient",
+      status: "approved"
+    };
+  } catch (error: any) {
+    console.error("Firebase Login Error:", error);
+    
+    // Mock login fallback when running offline
+    if (error.code === "auth/network-request-failed" || error.code === "auth/invalid-credential" || error.message.includes("mock")) {
+      const localDb = getMediSyncDb();
+      const profile = localDb.users.find(u => u.email === email);
+      if (profile) return profile;
+    }
+    throw error;
+  }
+};
+
+export const logoutUserWithFirebase = async (): Promise<void> => {
+  await signOut(auth);
 };

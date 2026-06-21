@@ -2,9 +2,10 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { getMediSyncDb, saveMediSyncDb, PatientRecord, Appointment, Prescription, EmergencyAlert } from "@/services/firebase";
+import { getMediSyncDb, saveMediSyncDb, PatientRecord, Appointment, Prescription, EmergencyAlert, findBestDoctor } from "@/services/firebase";
 import { analyzeVitals } from "@/services/aiEngine";
 import IoTSimulator from "@/components/IoTSimulator";
+import AuthGuard from "@/components/AuthGuard";
 import { 
   Heart, 
   Wind, 
@@ -14,51 +15,49 @@ import {
   Calendar, 
   FileText, 
   Users, 
-  Settings, 
   AlertTriangle, 
   Radio, 
-  Shield, 
   Plus, 
   ArrowLeft,
   Bell,
-  Cpu
+  Cpu,
+  ShieldCheck,
+  Stethoscope
 } from "lucide-react";
 
 export default function PatientDashboard() {
   const [patientId] = useState("pat1");
   const [db, setDb] = useState<ReturnType<typeof getMediSyncDb> | null>(null);
   
-  // Appointment form state
-  const [showAptModal, setShowAptModal] = useState(false);
-  const [aptDate, setAptDate] = useState("");
-  const [aptTime, setAptTime] = useState("");
-  const [aptReason, setAptReason] = useState("");
-  const [aptDoctor, setAptDoctor] = useState("doc1");
+  // Smart matching booking state
+  const [showMatchingModal, setShowMatchingModal] = useState(false);
+  const [specialtyNeeded, setSpecialtyNeeded] = useState("Cardiology");
+  const [matchingReason, setMatchingReason] = useState("");
+  const [matchedDoctor, setMatchedDoctor] = useState<any>(null);
+  const [isMatching, setIsMatching] = useState(false);
 
-  // Load and subscribe to database state
   const loadDb = () => {
     setDb(getMediSyncDb());
   };
 
   useEffect(() => {
     loadDb();
-    // Listening to changes from the simulator or other windows
     window.addEventListener("storage", loadDb);
     return () => window.removeEventListener("storage", loadDb);
   }, []);
 
   if (!db) {
-    return <div className="min-h-screen bg-background flex items-center justify-center text-zinc-400 font-mono">Connecting to MediSync DB...</div>;
+    return <div className="min-h-screen bg-background flex items-center justify-center text-zinc-400 font-mono bg-luxury-pureBlack">Connecting to MediSync DB...</div>;
   }
 
   const patient = db.patients.find((p) => p.uid === patientId);
-  const doctor = db.users.find((u) => u.uid === "doc1"); // Default assigned physician
   
   if (!patient) {
     return <div className="min-h-screen bg-background flex items-center justify-center text-red-400 font-mono">Patient record not found.</div>;
   }
 
-  // Calculate AI Risk Metrics
+  const activeAlerts = db.alerts.filter(a => a.patientId === patientId && a.status === "active");
+
   const aiReport = analyzeVitals(
     patient.vitals.heartRate,
     patient.vitals.spo2,
@@ -68,46 +67,86 @@ export default function PatientDashboard() {
     patient.vitals.glucose
   );
 
-  const handleBookAppointment = (e: React.FormEvent) => {
+  // Smart Matching Assignment Trigger
+  const handleSmartMatch = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!aptDate || !aptTime || !aptReason) return;
+    if (!matchingReason) return;
 
-    const newApt: Appointment = {
-      id: `apt-${Date.now()}`,
-      patientId: patient.uid,
-      patientName: patient.name,
-      doctorId: aptDoctor,
-      doctorName: doctor?.name || "Dr. Alexander Marcus",
-      date: aptDate,
-      time: aptTime,
-      status: "scheduled",
-      reason: aptReason
-    };
+    setIsMatching(true);
+    setMatchedDoctor(null);
 
-    const currentDb = getMediSyncDb();
-    currentDb.appointments.unshift(newApt);
-    saveMediSyncDb(currentDb);
-    loadDb();
+    setTimeout(() => {
+      // Run smart matching algorithm
+      const doctor = findBestDoctor(specialtyNeeded, aiReport.riskLevel === "Critical" ? 5 : 1);
+      
+      if (doctor) {
+        setMatchedDoctor(doctor);
+        
+        // Add appointment directly to database
+        const newApt: Appointment = {
+          id: `apt-${Date.now()}`,
+          patientId: patient.uid,
+          patientName: patient.name,
+          doctorId: doctor.uid,
+          doctorName: doctor.name,
+          date: new Date().toISOString().split("T")[0],
+          time: new Date(Date.now() + 600000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          status: "scheduled",
+          reason: matchingReason
+        };
 
-    // Reset form
-    setAptDate("");
-    setAptTime("");
-    setAptReason("");
-    setShowAptModal(false);
-  };
+        const currentDb = getMediSyncDb();
+        currentDb.appointments.unshift(newApt);
+        
+        // Save matching session info in activeSession database for WebRTC recovery
+        currentDb.activeSession = {
+          isActive: true,
+          patientId: patient.uid,
+          patientName: patient.name,
+          doctorId: doctor.uid,
+          doctorName: doctor.name,
+          messages: [],
+          vitalsBackup: patient.vitals,
+          reportsBackup: patient.reports
+        };
+        
+        // Increment doctor workload in registry
+        const docInDb = currentDb.users.find(u => u.uid === doctor.uid);
+        if (docInDb) {
+          docInDb.workload = (docInDb.workload || 0) + 1;
+        }
 
-  const getSeverityColor = (severity: string) => {
-    switch (severity) {
-      case "critical": return "text-red-400 bg-red-500/10 border-red-500/20";
-      case "warning": return "text-amber-400 bg-amber-500/10 border-amber-500/20";
-      default: return "text-zinc-400 bg-zinc-500/10 border-zinc-500/20";
-    }
+        saveMediSyncDb(currentDb);
+        loadDb();
+      } else {
+        // Queue appointment request if no doctors are currently active
+        const newApt: Appointment = {
+          id: `apt-${Date.now()}`,
+          patientId: patient.uid,
+          patientName: patient.name,
+          doctorId: "doc-pending",
+          doctorName: "Pending Auto-Match",
+          date: new Date().toISOString().split("T")[0],
+          time: "Queue Placement",
+          status: "waiting_queue",
+          reason: matchingReason
+        };
+        const currentDb = getMediSyncDb();
+        currentDb.appointments.unshift(newApt);
+        saveMediSyncDb(currentDb);
+        loadDb();
+      }
+      setIsMatching(false);
+    }, 1200);
   };
 
   return (
-    <div className="min-h-screen bg-background pb-12 text-zinc-100">
+    <AuthGuard allowedRoles={["patient"]}>
+      <div className="min-h-screen bg-luxury-pureBlack pb-12 text-zinc-100 relative">
+      <div className="absolute inset-0 bg-grid-pattern opacity-10 pointer-events-none" />
+      
       {/* Top Header Banner */}
-      <div className="bg-zinc-950 border-b border-zinc-900 py-6">
+      <div className="bg-luxury-pureBlack border-b border-luxury-goldRoyal/10 py-6 relative z-10">
         <div className="max-w-7xl mx-auto px-6 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Link href="/" className="p-2 hover:bg-zinc-900 rounded-lg text-zinc-400 hover:text-white transition-colors">
@@ -115,240 +154,249 @@ export default function PatientDashboard() {
             </Link>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-2xl font-extrabold tracking-tight">{patient.name}</h1>
-                <span className="text-xs px-2 py-0.5 rounded-full bg-primary/20 text-primary border border-primary/30 font-semibold uppercase">Patient Workspace</span>
+                <h1 className="text-2xl font-extrabold tracking-tight text-white">{patient.name}</h1>
+                <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-luxury-goldRoyal/10 text-luxury-goldRoyal border border-luxury-goldRoyal/20 font-mono uppercase font-bold">Patient Workspace</span>
               </div>
-              <p className="text-xs text-zinc-400 mt-0.5">Age: {patient.age} • Gender: {patient.gender} • Blood Type: {patient.bloodType}</p>
+              <p className="text-[10px] text-zinc-500 font-mono mt-0.5">Age: {patient.age} • Gender: {patient.gender} • Blood Type: {patient.bloodType}</p>
             </div>
           </div>
           
           <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-zinc-900 border border-zinc-800 text-xs">
-              <Cpu size={14} className="text-emerald-400" />
-              <span className="font-mono text-zinc-300">ESP32 Status: </span>
-              <span className="font-bold text-emerald-400 uppercase">Online</span>
+            <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-luxury-richBlack border border-luxury-goldRoyal/10 text-xs">
+              <Cpu size={14} className="text-luxury-blueElectric animate-pulse" />
+              <span className="font-mono text-zinc-500">Source: </span>
+              <span className="font-bold text-luxury-blueElectric uppercase font-mono">
+                {patient.vitalsMode === "device" ? "ESP32 Device" : "Manual Input"}
+              </span>
             </div>
             
-            <div className="relative p-2 hover:bg-zinc-900 rounded-lg text-zinc-400 cursor-pointer">
-              <Bell size={20} />
-              {db.alerts.filter(a => a.patientId === patientId && a.status === "active").length > 0 && (
-                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full animate-ping" />
+            <div className="relative p-2 hover:bg-zinc-900 rounded-lg text-zinc-400 cursor-pointer border border-zinc-900 bg-zinc-950">
+              <Bell size={18} />
+              {activeAlerts.length > 0 && (
+                <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-luxury-redCrimson rounded-full animate-ping" />
               )}
             </div>
           </div>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-6 mt-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className="max-w-7xl mx-auto px-6 mt-8 grid grid-cols-1 lg:grid-cols-3 gap-8 relative z-10">
         
         {/* Left Column: Live IoT Metrics Widgets */}
         <div className="lg:col-span-2 space-y-6">
           
           {/* Vitals Summary Card */}
-          <div className="glass-panel p-6 rounded-2xl border border-white/5 relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-violet-500/10 to-transparent blur-xl pointer-events-none" />
-            <div className="flex items-center justify-between border-b border-zinc-800/80 pb-4 mb-6">
-              <h2 className="text-lg font-bold flex items-center gap-2"><Activity className="text-primary animate-pulse" size={18} /> Live IoT Telemetry</h2>
-              <span className="text-xs text-zinc-500 font-mono">Sync Interval: 1000ms</span>
+          <div className="glass-panel p-6 rounded-2xl border border-luxury-goldRoyal/10 bg-luxury-richBlack/60 relative overflow-hidden animate-glow-gold">
+            <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-luxury-goldRoyal/10 to-transparent blur-xl pointer-events-none" />
+            <div className="flex items-center justify-between border-b border-zinc-900 pb-4 mb-6">
+              <h2 className="text-sm font-extrabold uppercase tracking-wider text-luxury-goldRoyal flex items-center gap-2"><ECGIcon className="text-luxury-redCrimson animate-pulse" size={16} /> Live Patient Telemetry</h2>
+              <span className="text-[10px] text-zinc-500 font-mono">Status: Secure connection</span>
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
               {/* Heart Rate */}
-              <div className="bg-zinc-950/60 border border-zinc-900/60 p-4 rounded-xl flex items-center justify-between">
+              <div className="bg-luxury-pureBlack border border-zinc-900 p-4 rounded-xl flex items-center justify-between">
                 <div>
-                  <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-mono">Heart Rate</p>
-                  <p className="text-3xl font-extrabold mt-1 text-white">{patient.vitals.heartRate}</p>
-                  <p className="text-[10px] text-zinc-400 mt-1">BPM (Normal)</p>
+                  <p className="text-[9px] text-zinc-500 uppercase tracking-widest font-mono">Heart Rate</p>
+                  <p className="text-3xl font-black mt-1 text-white animate-heartbeat">{patient.vitals.heartRate}</p>
+                  <p className="text-[9px] text-zinc-400 mt-1 font-mono">BPM</p>
                 </div>
-                <div className="p-3 bg-red-500/10 rounded-xl text-red-400">
-                  <Heart size={20} className="animate-pulse" />
+                <div className="p-2.5 bg-luxury-redCrimson/10 border border-luxury-redCrimson/25 rounded-xl text-luxury-redCrimson">
+                  <Heart size={18} />
                 </div>
               </div>
 
               {/* SpO2 */}
-              <div className="bg-zinc-950/60 border border-zinc-900/60 p-4 rounded-xl flex items-center justify-between">
+              <div className="bg-luxury-pureBlack border border-zinc-900 p-4 rounded-xl flex items-center justify-between">
                 <div>
-                  <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-mono">SpO2 Level</p>
-                  <p className="text-3xl font-extrabold mt-1 text-white">{patient.vitals.spo2}%</p>
-                  <p className="text-[10px] text-zinc-400 mt-1">{patient.vitals.spo2 < 90 ? "Critical" : "Stable"}</p>
+                  <p className="text-[9px] text-zinc-500 uppercase tracking-widest font-mono">Oxygen saturation</p>
+                  <p className="text-3xl font-black mt-1 text-white">{patient.vitals.spo2}%</p>
+                  <p className="text-[9px] text-zinc-400 mt-1 font-mono">{patient.vitals.spo2 < 90 ? "Hypoxia Alert" : "Stable"}</p>
                 </div>
-                <div className="p-3 bg-cyan-500/10 rounded-xl text-cyan-400">
-                  <Wind size={20} />
+                <div className="p-2.5 bg-luxury-blueElectric/10 border border-luxury-blueElectric/25 rounded-xl text-luxury-blueElectric">
+                  <Wind size={18} />
                 </div>
               </div>
 
               {/* Temp */}
-              <div className="bg-zinc-950/60 border border-zinc-900/60 p-4 rounded-xl flex items-center justify-between">
+              <div className="bg-luxury-pureBlack border border-zinc-900 p-4 rounded-xl flex items-center justify-between">
                 <div>
-                  <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-mono">Temperature</p>
-                  <p className="text-3xl font-extrabold mt-1 text-white">{patient.vitals.temperature}°C</p>
-                  <p className="text-[10px] text-zinc-400 mt-1">Body temp</p>
+                  <p className="text-[9px] text-zinc-500 uppercase tracking-widest font-mono">Body Temperature</p>
+                  <p className="text-3xl font-black mt-1 text-white">{patient.vitals.temperature}°C</p>
+                  <p className="text-[9px] text-zinc-400 mt-1 font-mono">Celsius</p>
                 </div>
-                <div className="p-3 bg-orange-500/10 rounded-xl text-orange-400">
-                  <Thermometer size={20} />
+                <div className="p-2.5 bg-luxury-goldRoyal/10 border border-luxury-goldRoyal/25 rounded-xl text-luxury-goldRoyal">
+                  <Thermometer size={18} />
                 </div>
               </div>
 
               {/* Blood Pressure */}
-              <div className="bg-zinc-950/60 border border-zinc-900/60 p-4 rounded-xl flex items-center justify-between">
+              <div className="bg-luxury-pureBlack border border-zinc-900 p-4 rounded-xl flex items-center justify-between">
                 <div>
-                  <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-mono">Blood Pressure</p>
-                  <p className="text-2xl font-extrabold mt-1 text-white">{patient.vitals.systolic}/{patient.vitals.diastolic}</p>
-                  <p className="text-[10px] text-zinc-400 mt-2">mmHg (Normal)</p>
+                  <p className="text-[9px] text-zinc-500 uppercase tracking-widest font-mono">Blood Pressure</p>
+                  <p className="text-2xl font-black mt-1 text-white">{patient.vitals.systolic}/{patient.vitals.diastolic}</p>
+                  <p className="text-[9px] text-zinc-400 mt-2 font-mono">mmHg</p>
                 </div>
-                <div className="p-3 bg-emerald-500/10 rounded-xl text-emerald-400">
-                  <ECGIcon size={20} />
+                <div className="p-2.5 bg-luxury-greenEmerald/10 border border-luxury-greenEmerald/25 rounded-xl text-luxury-greenEmerald">
+                  <ECGIcon size={18} />
                 </div>
               </div>
 
               {/* Glucose */}
-              <div className="bg-zinc-950/60 border border-zinc-900/60 p-4 rounded-xl flex items-center justify-between">
+              <div className="bg-luxury-pureBlack border border-zinc-900 p-4 rounded-xl flex items-center justify-between">
                 <div>
-                  <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-mono">Blood Sugar</p>
-                  <p className="text-3xl font-extrabold mt-1 text-white">{patient.vitals.glucose}</p>
-                  <p className="text-[10px] text-zinc-400 mt-1">mg/dL (Fasting)</p>
+                  <p className="text-[9px] text-zinc-500 uppercase tracking-widest font-mono">Blood Sugar</p>
+                  <p className="text-3xl font-black mt-1 text-white">{patient.vitals.glucose}</p>
+                  <p className="text-[9px] text-zinc-400 mt-1 font-mono">mg/dL</p>
                 </div>
-                <div className="p-3 bg-amber-500/10 rounded-xl text-amber-500">
-                  <Droplet size={20} />
+                <div className="p-2.5 bg-amber-500/10 border border-amber-500/25 rounded-xl text-amber-500">
+                  <Droplet size={18} />
                 </div>
               </div>
 
-              {/* Device Status */}
-              <div className="bg-zinc-950/60 border border-zinc-900/60 p-4 rounded-xl flex flex-col justify-between">
+              {/* Device Battery/Sync */}
+              <div className="bg-luxury-pureBlack border border-zinc-900 p-4 rounded-xl flex flex-col justify-between">
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-mono">Device Sync</span>
-                  <span className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse-fast" />
+                  <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-mono">IoT sync status</span>
+                  <span className="w-2 h-2 bg-luxury-greenEmerald rounded-full animate-pulse" />
                 </div>
-                <p className="text-lg font-bold text-white mt-1">{patient.connectedDevice?.deviceId}</p>
-                <div className="flex justify-between items-center text-[10px] text-zinc-400 mt-1">
+                <p className="text-base font-bold text-white mt-1 font-mono">{patient.connectedDevice?.deviceId}</p>
+                <div className="flex justify-between items-center text-[9px] text-zinc-400 mt-1 font-mono">
                   <span>Battery: {patient.connectedDevice?.battery}%</span>
                   <span>1s ago</span>
                 </div>
               </div>
             </div>
 
-            {/* AI Health Score banner */}
-            <div className="mt-6 p-4 rounded-xl bg-gradient-to-r from-violet-600/15 to-cyan-500/15 border border-violet-500/20 flex flex-col md:flex-row items-center justify-between gap-4">
+            {/* AI Diagnostics status */}
+            <div className="mt-6 p-4 rounded-xl bg-gradient-to-r from-luxury-goldRoyal/10 to-luxury-blueMedical/10 border border-luxury-goldRoyal/20 flex flex-col md:flex-row items-center justify-between gap-4">
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-full bg-violet-600/20 text-violet-400 flex items-center justify-center font-extrabold text-lg">
+                <div className="w-12 h-12 rounded-full bg-luxury-goldRoyal/15 text-luxury-goldRoyal flex items-center justify-center font-black text-sm border border-luxury-goldRoyal/30 shadow-lg shadow-luxury-goldRoyal/5">
                   {aiReport.healthScore}
                 </div>
                 <div>
-                  <h4 className="font-semibold text-sm">AI Health Score: {aiReport.riskLevel} Risk</h4>
-                  <p className="text-xs text-zinc-400 mt-0.5">{aiReport.clinicalInsights}</p>
+                  <h4 className="font-semibold text-xs text-white">AI Health Assessment: {aiReport.riskLevel} Risk</h4>
+                  <p className="text-[10px] text-zinc-400 mt-0.5">{aiReport.clinicalInsights}</p>
                 </div>
               </div>
-              <Link href="/ai-center" className="px-3.5 py-1.5 bg-violet-600 hover:bg-violet-500 text-white rounded-lg text-xs font-semibold transition-colors">
-                Run Diagnostic Check
+              <Link href="/ai-center" className="px-3.5 py-1.5 bg-luxury-goldRoyal hover:bg-luxury-goldRoyal/90 text-luxury-pureBlack rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors">
+                Run AI Diagnostic
               </Link>
             </div>
           </div>
 
-          {/* ESP32 HARDWARE SIMULATOR INTEGRATION (VITAL FOR DEMO PITCH) */}
-          <div className="border border-white/5 rounded-2xl overflow-hidden bg-zinc-950/40">
-            <div className="p-4 bg-zinc-950/80 border-b border-zinc-900 flex justify-between items-center">
-              <h3 className="text-sm font-bold flex items-center gap-1.5 text-cyan-400"><Cpu size={16} /> Patient IoT Hardware Stream</h3>
-              <p className="text-[10px] text-zinc-500">Interact to trigger real-time changes in widgets above</p>
-            </div>
+          {/* IoT Simulator / Vital Entry forms */}
+          <div className="border border-zinc-900 rounded-2xl overflow-hidden bg-luxury-richBlack/40">
             <IoTSimulator />
           </div>
 
-          {/* Medical History & Timeline */}
-          <div className="glass-panel p-6 rounded-2xl border border-white/5">
-            <h2 className="text-lg font-bold mb-4 flex items-center gap-2"><FileText size={18} className="text-violet-400" /> Electronic Health Records</h2>
-            <div className="space-y-4 border-l-2 border-zinc-800 pl-4 ml-2">
+          {/* EHR Records */}
+          <div className="glass-panel p-6 rounded-2xl border border-luxury-goldRoyal/10 bg-luxury-richBlack/60">
+            <h2 className="text-sm font-extrabold uppercase tracking-wider mb-4 flex items-center gap-2 text-zinc-300"><FileText size={16} className="text-luxury-goldRoyal" /> Clinical Timeline & Records</h2>
+            <div className="space-y-4 border-l border-zinc-800 pl-4 ml-2">
               {patient.history.map((record, index) => (
                 <div key={index} className="relative">
-                  <div className="absolute -left-[23px] top-1.5 w-2 h-2 rounded-full bg-violet-500" />
-                  <p className="text-xs text-zinc-500 font-mono">{record.date}</p>
-                  <h4 className="text-sm font-semibold mt-0.5">{record.diagnosis}</h4>
-                  <p className="text-xs text-zinc-400">Attending Physician: {record.doctor}</p>
+                  <div className="absolute -left-[21px] top-1.5 w-1.5 h-1.5 rounded-full bg-luxury-goldRoyal" />
+                  <p className="text-[10px] text-zinc-500 font-mono">{record.date}</p>
+                  <h4 className="text-xs font-bold text-white mt-0.5">{record.diagnosis}</h4>
+                  <p className="text-[10px] text-zinc-400">Attending Physician: {record.doctor}</p>
                 </div>
               ))}
             </div>
           </div>
         </div>
 
-        {/* Right Column: Appointments & Prescriptions */}
+        {/* Right Column: Alerts, Matching Queue, Prescriptions */}
         <div className="space-y-6">
           
-          {/* Active Alerts Drawer */}
-          {db.alerts.filter(a => a.patientId === patientId && a.status === "active").length > 0 && (
-            <div className="glass-panel p-6 rounded-2xl border border-red-500/20 bg-red-500/5">
-              <h3 className="text-sm font-bold text-red-400 flex items-center gap-1.5 uppercase tracking-wide">
-                <AlertTriangle size={16} className="animate-bounce" /> Active Emergency Alerts
+          {/* Active Emergency alerts banner */}
+          {activeAlerts.length > 0 && (
+            <div className="glass-panel p-6 rounded-2xl border border-luxury-redCrimson/30 bg-luxury-redCrimson/5 animate-pulse">
+              <h3 className="text-xs font-bold text-luxury-redCrimson flex items-center gap-1.5 uppercase tracking-wider">
+                <AlertTriangle size={14} /> Active Emergency Alert
               </h3>
-              <div className="mt-3 space-y-3">
-                {db.alerts.filter(a => a.patientId === patientId && a.status === "active").map((alert) => (
-                  <div key={alert.id} className="p-3 rounded-lg bg-zinc-900/80 border border-red-500/10 flex justify-between items-center text-xs">
+              <div className="mt-3 space-y-2">
+                {activeAlerts.map((alert) => (
+                  <div key={alert.id} className="p-3 rounded-xl bg-luxury-pureBlack border border-luxury-redCrimson/20 flex justify-between items-center text-xs">
                     <div>
-                      <p className="font-semibold text-white">Abnormal {alert.metric}</p>
-                      <p className="text-[10px] text-zinc-400">Triggered: {new Date(alert.timestamp).toLocaleTimeString()}</p>
+                      <p className="font-bold text-white">Vitals Breach: {alert.metric}</p>
+                      <p className="text-[9px] text-zinc-500">Triggered: {new Date(alert.timestamp).toLocaleTimeString()}</p>
                     </div>
-                    <span className="px-2 py-0.5 bg-red-500/20 text-red-400 border border-red-500/30 rounded font-mono font-bold">{alert.value}</span>
+                    <span className="px-2 py-0.5 bg-luxury-redCrimson/25 text-luxury-redCrimson border border-luxury-redCrimson/30 rounded font-mono font-bold">{alert.value}</span>
                   </div>
                 ))}
               </div>
             </div>
           )}
 
-          {/* Telemedicine & Video Appointment Hub */}
-          <div className="glass-panel p-6 rounded-2xl border border-white/5">
+          {/* Telemedicine & Smart Matching Engine */}
+          <div className="glass-panel p-6 rounded-2xl border border-luxury-goldRoyal/10 bg-luxury-richBlack/60">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-base font-bold flex items-center gap-2"><Calendar size={18} className="text-cyan-400" /> Telehealth Schedules</h3>
+              <h3 className="text-xs font-extrabold uppercase tracking-wider text-zinc-300 flex items-center gap-2"><Calendar size={16} className="text-luxury-blueElectric" /> Telehealth consultations</h3>
               <button 
-                onClick={() => setShowAptModal(true)}
-                className="p-1.5 bg-primary/20 hover:bg-primary/30 text-primary rounded-lg transition-colors"
+                onClick={() => setShowMatchingModal(true)}
+                className="px-2.5 py-1 bg-luxury-blueElectric/20 hover:bg-luxury-blueElectric/30 text-luxury-blueElectric rounded-lg text-[9px] font-bold uppercase tracking-wider border border-luxury-blueElectric/30 transition-colors flex items-center gap-1"
               >
-                <Plus size={16} />
+                <Plus size={10} /> Smart Match
               </button>
             </div>
 
             <div className="space-y-3">
               {db.appointments.filter(a => a.patientId === patientId).length === 0 ? (
-                <p className="text-xs text-zinc-500 text-center py-4">No appointments scheduled</p>
+                <p className="text-[10px] text-zinc-500 text-center py-4">No scheduled video rooms</p>
               ) : (
                 db.appointments.filter(a => a.patientId === patientId).map((apt) => (
-                  <div key={apt.id} className="p-3 bg-zinc-950/60 rounded-xl border border-zinc-900 flex justify-between items-center">
+                  <div key={apt.id} className="p-3.5 bg-luxury-pureBlack rounded-xl border border-zinc-900 flex justify-between items-center text-xs">
                     <div>
-                      <h4 className="text-sm font-semibold text-white">{apt.doctorName}</h4>
-                      <p className="text-xs text-zinc-400 mt-0.5">{apt.date} at {apt.time}</p>
-                      <p className="text-[10px] text-zinc-500 mt-1 italic">"{apt.reason}"</p>
+                      <h4 className="font-bold text-white">{apt.doctorName}</h4>
+                      <p className="text-[10px] text-zinc-500 mt-0.5">{apt.date} • {apt.time}</p>
+                      {apt.status === "waiting_queue" ? (
+                        <span className="inline-block mt-2 px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-full text-[9px] font-bold uppercase">Matching queue</span>
+                      ) : (
+                        <p className="text-[9px] text-zinc-400 mt-1.5 italic">"{apt.reason}"</p>
+                      )}
                     </div>
-                    <Link 
-                      href="/consultation" 
-                      className="px-2.5 py-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 rounded-lg text-xs font-semibold transition-colors"
-                    >
-                      Join Room
-                    </Link>
+                    {apt.status !== "waiting_queue" && (
+                      <Link 
+                        href="/consultation" 
+                        className="px-2.5 py-1.5 bg-luxury-greenEmerald/20 hover:bg-luxury-greenEmerald/30 text-luxury-greenEmerald border border-luxury-greenEmerald/30 rounded-lg text-[10px] font-extrabold uppercase tracking-wider transition-all"
+                      >
+                        Join Call
+                      </Link>
+                    )}
                   </div>
                 ))
               )}
             </div>
           </div>
 
-          {/* Prescriptions Downloads */}
-          <div className="glass-panel p-6 rounded-2xl border border-white/5">
-            <h3 className="text-base font-bold mb-4 flex items-center gap-2"><FileText size={18} className="text-violet-400" /> Active Prescriptions</h3>
+          {/* Active Prescriptions */}
+          <div className="glass-panel p-6 rounded-2xl border border-luxury-goldRoyal/10 bg-luxury-richBlack/60">
+            <h3 className="text-xs font-extrabold uppercase tracking-wider text-zinc-300 mb-4 flex items-center gap-2"><FileText size={16} className="text-luxury-goldRoyal" /> Active Prescriptions</h3>
             
             <div className="space-y-4">
               {db.prescriptions.filter(p => p.patientId === patientId).map((pres) => (
-                <div key={pres.id} className="p-4 bg-zinc-950/60 rounded-xl border border-zinc-900">
-                  <div className="flex justify-between items-start mb-2">
+                <div key={pres.id} className="p-4 bg-luxury-pureBlack rounded-xl border border-zinc-900">
+                  <div className="flex justify-between items-start mb-2 border-b border-zinc-900 pb-2">
                     <div>
                       <h4 className="text-xs font-bold text-zinc-300">{pres.doctorName}</h4>
-                      <p className="text-[10px] text-zinc-500">{pres.date}</p>
+                      <p className="text-[9px] text-zinc-500 font-mono">{pres.date}</p>
                     </div>
-                    <button className="text-[10px] px-2 py-1 bg-zinc-900 border border-zinc-800 rounded text-zinc-400 hover:text-white transition-colors">
-                      Download PDF
+                    <button className="text-[9px] px-2 py-1 bg-zinc-900 border border-zinc-800 rounded text-zinc-400 hover:text-white transition-colors uppercase font-mono font-semibold">
+                      PDF
                     </button>
                   </div>
                   
-                  <div className="space-y-1.5 mt-3">
+                  <div className="space-y-2 mt-3">
                     {pres.medicines.map((med, idx) => (
                       <div key={idx} className="flex justify-between items-center text-xs">
-                        <span className="font-semibold text-white">{med.name} <span className="text-[10px] text-zinc-500">({med.dosage})</span></span>
-                        <span className="text-[10px] text-zinc-400">{med.frequency}</span>
+                        <span className="font-bold text-white">{med.name} <span className="text-[10px] text-zinc-500 font-normal">({med.dosage})</span></span>
+                        <div className="text-right">
+                          <p className="text-[9px] text-zinc-400 font-semibold">{med.frequency} x {med.duration}</p>
+                          {med.instructions && (
+                            <span className="text-[8px] text-luxury-goldRoyal font-bold font-mono uppercase bg-luxury-goldRoyal/5 border border-luxury-goldRoyal/10 px-1 py-0.5 rounded">{med.instructions}</span>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -362,16 +410,16 @@ export default function PatientDashboard() {
           </div>
 
           {/* Family Authorization */}
-          <div className="glass-panel p-6 rounded-2xl border border-white/5">
-            <h3 className="text-base font-bold mb-4 flex items-center gap-2"><Users size={18} className="text-cyan-400" /> Family Portal Access</h3>
+          <div className="glass-panel p-6 rounded-2xl border border-luxury-goldRoyal/10 bg-luxury-richBlack/60">
+            <h3 className="text-xs font-extrabold uppercase tracking-wider text-zinc-300 mb-4 flex items-center gap-2"><Users size={16} className="text-luxury-goldRoyal" /> Authorized Family</h3>
             <div className="space-y-3">
               {patient.familyMembers.map((member, idx) => (
-                <div key={idx} className="flex items-center justify-between p-3 bg-zinc-950/60 rounded-xl border border-zinc-900 text-xs">
+                <div key={idx} className="flex items-center justify-between p-3 bg-luxury-pureBlack rounded-xl border border-zinc-900 text-xs">
                   <div>
-                    <p className="font-semibold text-white">{member.name}</p>
-                    <p className="text-[10px] text-zinc-500">{member.relation} ({member.email})</p>
+                    <p className="font-bold text-white">{member.name}</p>
+                    <p className="text-[9px] text-zinc-500">{member.relation} • {member.email}</p>
                   </div>
-                  <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-full font-mono text-[9px] uppercase font-bold">Alert Trigger enabled</span>
+                  <span className="px-2 py-0.5 bg-luxury-greenEmerald/15 text-luxury-greenEmerald border border-luxury-greenEmerald/25 rounded-full font-mono text-[9px] uppercase font-bold">ALERTS ACTIVE</span>
                 </div>
               ))}
             </div>
@@ -380,76 +428,91 @@ export default function PatientDashboard() {
         </div>
       </div>
 
-      {/* Appointment booking Modal */}
-      {showAptModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="glass-panel-heavy p-8 rounded-2xl border border-white/10 w-full max-w-md text-white">
-            <h3 className="text-lg font-bold mb-4">Request Telemedicine Consultation</h3>
+      {/* Smart matching booking Modal */}
+      {showMatchingModal && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="glass-panel p-8 rounded-2xl border border-luxury-goldRoyal/20 w-full max-w-md text-white bg-luxury-richBlack animate-glow-gold">
+            <div className="flex items-center gap-2.5 mb-4 pb-2 border-b border-zinc-800">
+              <Stethoscope className="text-luxury-blueElectric" size={20} />
+              <h3 className="text-base font-bold tracking-wide uppercase">AI Smart Match Engine</h3>
+            </div>
             
-            <form onSubmit={handleBookAppointment} className="space-y-4">
-              <div>
-                <label className="block text-xs text-zinc-400 mb-1">Select Physician</label>
-                <select 
-                  value={aptDoctor}
-                  onChange={(e) => setAptDoctor(e.target.value)}
-                  className="w-full bg-zinc-900 border border-zinc-800 text-sm px-4 py-2.5 rounded-lg focus:outline-none"
-                >
-                  <option value="doc1">Dr. Alexander Marcus (Mayo Clinic)</option>
-                  <option value="doc2">Dr. Elizabeth Carter (Stanford Medicine)</option>
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
+            {!matchedDoctor ? (
+              <form onSubmit={handleSmartMatch} className="space-y-4">
                 <div>
-                  <label className="block text-xs text-zinc-400 mb-1">Preferred Date</label>
-                  <input 
-                    type="date"
-                    value={aptDate}
-                    onChange={(e) => setAptDate(e.target.value)}
-                    className="w-full bg-zinc-900 border border-zinc-800 text-sm px-4 py-2 rounded-lg focus:outline-none text-white"
+                  <label className="block text-[10px] text-zinc-400 uppercase tracking-widest font-mono mb-1">Select Specialty Needed</label>
+                  <select 
+                    value={specialtyNeeded}
+                    onChange={(e) => setSpecialtyNeeded(e.target.value)}
+                    className="w-full bg-zinc-900 border border-zinc-800 text-xs px-4 py-2.5 rounded-lg focus:outline-none text-zinc-200"
+                  >
+                    <option value="Cardiology">Cardiology (Heart/Vitals)</option>
+                    <option value="ICU / Emergency Medicine">ICU / Emergency Medicine (Critical Care)</option>
+                    <option value="Pulmonology">Pulmonology (Lungs/SpO2)</option>
+                    <option value="General Medicine">General Medicine</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] text-zinc-400 uppercase tracking-widest font-mono mb-1">Chief medical complaint</label>
+                  <textarea 
+                    rows={3}
+                    value={matchingReason}
+                    onChange={(e) => setMatchingReason(e.target.value)}
+                    placeholder="Describe your current status or symptom check logs..."
+                    className="w-full bg-zinc-900 border border-zinc-800 text-xs px-4 py-2.5 rounded-lg focus:outline-none placeholder-zinc-700 text-white"
                   />
                 </div>
-                <div>
-                  <label className="block text-xs text-zinc-400 mb-1">Preferred Time</label>
-                  <input 
-                    type="time"
-                    value={aptTime}
-                    onChange={(e) => setAptTime(e.target.value)}
-                    className="w-full bg-zinc-900 border border-zinc-800 text-sm px-4 py-2 rounded-lg focus:outline-none text-white"
-                  />
+
+                <div className="flex gap-3 justify-end pt-2">
+                  <button 
+                    type="button"
+                    onClick={() => setShowMatchingModal(false)}
+                    className="px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-xs font-bold uppercase transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    type="submit"
+                    disabled={isMatching}
+                    className="px-5 py-2 bg-luxury-blueElectric text-luxury-pureBlack rounded-lg text-xs font-bold uppercase tracking-wider transition-colors hover:bg-luxury-blueElectric/90"
+                  >
+                    {isMatching ? "RUNNING MATCH..." : "REQUEST ASSIGNMENT"}
+                  </button>
                 </div>
-              </div>
+              </form>
+            ) : (
+              <div className="space-y-6 text-center py-4">
+                <div className="w-16 h-16 rounded-full bg-luxury-greenEmerald/15 text-luxury-greenEmerald flex items-center justify-center mx-auto border border-luxury-greenEmerald/30">
+                  <ShieldCheck size={32} />
+                </div>
+                
+                <div>
+                  <h4 className="font-extrabold text-sm text-white">DOCTOR SUCCESSFULLY MATCHED</h4>
+                  <p className="text-xs text-zinc-400 mt-2">The clinical algorithm has routed you to our available clinician:</p>
+                </div>
 
-              <div>
-                <label className="block text-xs text-zinc-400 mb-1">Reason for consultation</label>
-                <textarea 
-                  rows={3}
-                  value={aptReason}
-                  onChange={(e) => setAptReason(e.target.value)}
-                  placeholder="e.g. Discuss new blood pressure readings..."
-                  className="w-full bg-zinc-900 border border-zinc-800 text-sm px-4 py-2 rounded-lg focus:outline-none placeholder-zinc-600"
-                />
-              </div>
+                <div className="p-4 bg-zinc-950 rounded-xl border border-zinc-900 text-left text-xs space-y-1">
+                  <p className="font-bold text-white text-sm">{matchedDoctor.name}</p>
+                  <p className="text-luxury-goldRoyal font-semibold">{matchedDoctor.specialty} Specialist</p>
+                  <p className="text-zinc-500 font-mono text-[9px] pt-1">Availability: Available • Workload: Low</p>
+                </div>
 
-              <div className="flex gap-3 justify-end pt-2">
-                <button 
-                  type="button"
-                  onClick={() => setShowAptModal(false)}
-                  className="px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-sm font-semibold hover:bg-zinc-800 transition-colors"
+                <button
+                  onClick={() => {
+                    setMatchedDoctor(null);
+                    setShowMatchingModal(false);
+                  }}
+                  className="px-6 py-2.5 bg-luxury-goldRoyal text-luxury-pureBlack rounded-lg text-xs font-extrabold uppercase tracking-wider"
                 >
-                  Cancel
-                </button>
-                <button 
-                  type="submit"
-                  className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-semibold hover:bg-primary/95 transition-colors"
-                >
-                  Confirm Request
+                  Go to Workspace
                 </button>
               </div>
-            </form>
+            )}
           </div>
         </div>
       )}
     </div>
+    </AuthGuard>
   );
 }
