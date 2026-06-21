@@ -79,7 +79,7 @@ export default function RegisterPage() {
             </span>
           </Link>
           <h2 className="text-xl font-bold tracking-wide uppercase text-white">Register Clinical Profile</h2>
-          <p className="text-xs text-zinc-550 mt-1">Enroll your account in the MediSync Health network</p>
+          <p className="text-xs text-zinc-400 mt-1">Enroll your account in the MediSync Health network</p>
         </div>
 
         {/* Card */}

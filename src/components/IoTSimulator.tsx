@@ -303,7 +303,7 @@ export default function IoTSimulator() {
                       : "bg-zinc-900 text-zinc-400 border-zinc-800"
                   }`}
                 >
-                  {abnormalEcg ? "ARRHYTHMIA ON" : "MOCK ECG ARRYTHMIA"}
+                  {abnormalEcg ? "ARRHYTHMIA ACTIVE" : "SIMULATE ARRHYTHMIA"}
                 </button>
               </div>
             </div>
