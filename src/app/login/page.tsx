@@ -4,18 +4,33 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { useRouter } from "next/navigation";
-import { Activity, ShieldAlert, Key, Mail, Lock, ArrowRight, UserCheck } from "lucide-react";
+import { 
+  Activity, 
+  ShieldAlert, 
+  Mail, 
+  Lock, 
+  ArrowRight, 
+  Key, 
+  CheckCircle,
+  HelpCircle
+} from "lucide-react";
 
 export default function LoginPage() {
-  const { login, user } = useAuth();
+  const { login, loginWithGoogle, forgotPassword } = useAuth();
   const router = useRouter();
 
+  // Login States
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // Forgot Password States
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetSuccess, setResetSuccess] = useState("");
+
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) return;
 
@@ -25,20 +40,38 @@ export default function LoginPage() {
       const profile = await login(email, password);
       routeUser(profile.role);
     } catch (err: any) {
-      setErrorMsg(err.message || "Invalid credentials. Please verify email and password.");
+      setErrorMsg(err.message || "Invalid credentials. Please verify your email and password.");
     } finally {
       setLoading(false);
     }
   };
 
-  const handlePresetLogin = async (presetEmail: string) => {
+  const handleGoogleLogin = async () => {
     setLoading(true);
     setErrorMsg("");
     try {
-      const profile = await login(presetEmail, "password123"); // Mock password used for fast presets
+      const profile = await loginWithGoogle();
       routeUser(profile.role);
     } catch (err: any) {
-      setErrorMsg("Preset authentication failed. Verify database seeds.");
+      setErrorMsg(err.message || "Google Authentication failed. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResetSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resetEmail) return;
+
+    setLoading(true);
+    setErrorMsg("");
+    setResetSuccess("");
+    try {
+      await forgotPassword(resetEmail);
+      setResetSuccess("A password reset link has been dispatched to your email address.");
+      setResetEmail("");
+    } catch (err: any) {
+      setErrorMsg(err.message || "Failed to dispatch reset email. Please verify the address.");
     } finally {
       setLoading(false);
     }
@@ -74,11 +107,17 @@ export default function LoginPage() {
               MEDISYNC <span className="text-luxury-goldRoyal font-medium">AI</span>
             </span>
           </Link>
-          <h2 className="text-xl font-bold tracking-wide uppercase text-white">Clinical Workspace Auth</h2>
-          <p className="text-xs text-zinc-500 mt-1">Please authenticate using your clinical credentials</p>
+          <h2 className="text-xl font-bold tracking-wide uppercase text-white">
+            {showForgotPassword ? "Reset Workspace Password" : "Clinical Workspace Auth"}
+          </h2>
+          <p className="text-xs text-zinc-400 mt-1">
+            {showForgotPassword 
+              ? "Recover access to your MediSync clinical node" 
+              : "Please authenticate using your clinical credentials"}
+          </p>
         </div>
 
-        {/* Login form card */}
+        {/* Auth form card */}
         <div className="glass-panel p-8 rounded-3xl border border-luxury-goldRoyal/10 bg-luxury-richBlack/60 shadow-2xl animate-glow-gold">
           
           {errorMsg && (
@@ -88,71 +127,134 @@ export default function LoginPage() {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-[9px] text-zinc-500 uppercase tracking-widest font-mono mb-1">Clinician / Patient Email</label>
-              <div className="relative">
-                <input
-                  type="email" value={email} onChange={(e) => setEmail(e.target.value)}
-                  placeholder="name@medisync.ai"
-                  className="w-full bg-zinc-900 border border-zinc-800 rounded-xl pl-10 pr-4 py-2.5 text-xs focus:outline-none focus:border-luxury-goldRoyal text-white placeholder-zinc-700"
-                />
-                <Mail size={14} className="absolute left-3.5 top-3.5 text-zinc-500" />
+          {resetSuccess && (
+            <div className="p-3.5 bg-luxury-greenEmerald/10 border border-luxury-greenEmerald/25 rounded-xl text-luxury-greenEmerald text-xs flex items-start gap-1.5 mb-4">
+              <CheckCircle size={14} className="shrink-0 mt-0.5" />
+              <span>{resetSuccess}</span>
+            </div>
+          )}
+
+          {!showForgotPassword ? (
+            /* Sign In Flow */
+            <div className="space-y-6">
+              <form onSubmit={handleLoginSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-[9px] text-zinc-500 uppercase tracking-widest font-mono mb-1">Ecosystem / User Email</label>
+                  <div className="relative">
+                    <input
+                      type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
+                      placeholder="name@medisync.ai"
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-xl pl-10 pr-4 py-2.5 text-xs focus:outline-none focus:border-luxury-goldRoyal text-white placeholder-zinc-700"
+                    />
+                    <Mail size={14} className="absolute left-3.5 top-3.5 text-zinc-500" />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="block text-[9px] text-zinc-500 uppercase tracking-widest font-mono">Password</label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowForgotPassword(true);
+                        setErrorMsg("");
+                        setResetSuccess("");
+                      }}
+                      className="text-[9px] text-luxury-goldRoyal hover:underline uppercase font-mono tracking-widest"
+                    >
+                      Forgot?
+                    </button>
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="password" required value={password} onChange={(e) => setPassword(e.target.value)}
+                      placeholder="••••••••"
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-xl pl-10 pr-4 py-2.5 text-xs focus:outline-none focus:border-luxury-goldRoyal text-white placeholder-zinc-700"
+                    />
+                    <Lock size={14} className="absolute left-3.5 top-3.5 text-zinc-500" />
+                  </div>
+                </div>
+
+                <button
+                  type="submit" disabled={loading}
+                  className="w-full py-3 bg-luxury-goldRoyal text-luxury-pureBlack font-bold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 transition-transform hover:scale-[1.01] border border-luxury-goldRoyal/30 shadow-lg shadow-luxury-goldRoyal/5"
+                >
+                  {loading ? "AUTHENTICATING..." : "Sign In"} <ArrowRight size={14} />
+                </button>
+              </form>
+
+              <div className="relative flex py-2 items-center">
+                <div className="flex-grow border-t border-zinc-900"></div>
+                <span className="flex-shrink mx-4 text-[9px] text-zinc-500 uppercase font-mono tracking-widest">or continue with</span>
+                <div className="flex-grow border-t border-zinc-900"></div>
               </div>
-            </div>
 
-            <div>
-              <label className="block text-[9px] text-zinc-500 uppercase tracking-widest font-mono mb-1">Password</label>
-              <div className="relative">
-                <input
-                  type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full bg-zinc-900 border border-zinc-800 rounded-xl pl-10 pr-4 py-2.5 text-xs focus:outline-none focus:border-luxury-goldRoyal text-white placeholder-zinc-700"
-                />
-                <Lock size={14} className="absolute left-3.5 top-3.5 text-zinc-500" />
+              {/* Google login button */}
+              <button
+                type="button" onClick={handleGoogleLogin} disabled={loading}
+                className="w-full py-2.5 bg-zinc-950 hover:bg-zinc-900 border border-zinc-900 hover:border-zinc-850 text-zinc-300 font-semibold rounded-xl text-xs flex items-center justify-center transition-all"
+              >
+                <svg className="w-4 h-4 mr-2.5" viewBox="0 0 24 24">
+                  <path
+                    fill="#EA4335"
+                    d="M5.266 9.765A7.077 7.077 0 0 1 12 4.909c1.69 0 3.218.6 4.418 1.582l3.51-3.51C17.642 1.09 14.974 0 12 0 7.354 0 3.307 2.673 1.353 6.582l3.913 3.183Z"
+                  />
+                  <path
+                    fill="#34A853"
+                    d="M16.04 15.345c-1.16.737-2.618 1.164-4.04 1.164a7.077 7.077 0 0 1-6.734-4.855L1.353 14.837C3.307 18.745 7.354 21.418 12 21.418c2.936 0 5.618-.973 7.645-2.645l-3.605-3.428Z"
+                  />
+                  <path
+                    fill="#4285F4"
+                    d="M22.09 12.245c0-.682-.064-1.336-.182-1.964H12v3.718h5.664a4.85 4.85 0 0 1-2.09 3.182l3.605 3.427c2.109-1.945 3.327-4.8 3.327-8.363Z"
+                  />
+                  <path
+                    fill="#FBBC05"
+                    d="M5.266 12.245a7.05 7.05 0 0 1 0-2.48L1.353 6.582a11.96 11.96 0 0 0 0 11.327l3.913-3.182a7.05 7.05 0 0 1 0-2.482Z"
+                  />
+                </svg>
+                Google Federated Sign In
+              </button>
+            </div>
+          ) : (
+            /* Forgot Password Flow */
+            <form onSubmit={handleResetSubmit} className="space-y-4">
+              <div>
+                <label className="block text-[9px] text-zinc-500 uppercase tracking-widest font-mono mb-1">Account Email</label>
+                <div className="relative">
+                  <input
+                    type="email" required value={resetEmail} onChange={(e) => setResetEmail(e.target.value)}
+                    placeholder="name@email.com"
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl pl-10 pr-4 py-2.5 text-xs focus:outline-none focus:border-luxury-goldRoyal text-white placeholder-zinc-700"
+                  />
+                  <Mail size={14} className="absolute left-3.5 top-3.5 text-zinc-500" />
+                </div>
               </div>
-            </div>
 
-            <button
-              type="submit" disabled={loading}
-              className="w-full py-3 bg-luxury-goldRoyal text-luxury-pureBlack font-bold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 transition-transform hover:scale-[1.01] border border-luxury-goldRoyal/30"
-            >
-              {loading ? "AUTHENTICATING..." : "Sign In"} <ArrowRight size={14} />
-            </button>
-          </form>
+              <button
+                type="submit" disabled={loading}
+                className="w-full py-3 bg-luxury-goldRoyal text-luxury-pureBlack font-bold rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 transition-transform hover:scale-[1.01] border border-luxury-goldRoyal/30"
+              >
+                {loading ? "DISPATCHING LINK..." : "Send Reset Link"} <Key size={14} />
+              </button>
 
-          {/* Quick presets (CRITICAL FOR DEMO AND TESTING) */}
-          <div className="mt-6 pt-5 border-t border-zinc-900 space-y-3">
-            <p className="text-[9px] text-zinc-400 uppercase tracking-widest font-mono text-center">Clinical Credentials Portal (Roster Profile)</p>
-            <div className="grid grid-cols-1 gap-2">
               <button
-                onClick={() => handlePresetLogin("james@gmail.com")}
-                className="py-2 bg-zinc-950 hover:bg-zinc-900 border border-zinc-900 hover:border-zinc-850 rounded-xl text-[10px] text-zinc-350 font-semibold transition-all flex items-center justify-between px-4"
+                type="button"
+                onClick={() => {
+                  setShowForgotPassword(false);
+                  setErrorMsg("");
+                  setResetSuccess("");
+                }}
+                className="w-full py-2.5 bg-zinc-950 hover:bg-zinc-900 border border-zinc-900 text-zinc-400 hover:text-white rounded-xl text-xs transition-colors"
               >
-                <span className="flex items-center gap-1.5"><UserCheck size={12} className="text-luxury-blueElectric" /> James Anderson</span>
-                 <span className="text-[8px] text-zinc-400 uppercase tracking-widest font-mono bg-luxury-blueElectric/10 text-luxury-blueElectric px-1.5 py-0.5 rounded">Patient</span>
+                Back to Sign In
               </button>
-              <button
-                onClick={() => handlePresetLogin("alexander@medisync.ai")}
-                className="py-2 bg-zinc-950 hover:bg-zinc-900 border border-zinc-900 hover:border-zinc-850 rounded-xl text-[10px] text-zinc-350 font-semibold transition-all flex items-center justify-between px-4"
-              >
-                <span className="flex items-center gap-1.5"><UserCheck size={12} className="text-luxury-goldRoyal" /> Dr. Alexander Marcus</span>
-                 <span className="text-[8px] text-zinc-400 uppercase tracking-widest font-mono bg-luxury-goldRoyal/10 text-luxury-goldRoyal px-1.5 py-0.5 rounded">Doctor</span>
-              </button>
-              <button
-                onClick={() => handlePresetLogin("admin@medisync.ai")}
-                className="py-2 bg-zinc-950 hover:bg-zinc-900 border border-zinc-900 hover:border-zinc-850 rounded-xl text-[10px] text-zinc-350 font-semibold transition-all flex items-center justify-between px-4"
-              >
-                <span className="flex items-center gap-1.5"><UserCheck size={12} className="text-luxury-greenEmerald" /> Dr. Sarah Lin (CTO)</span>
-                 <span className="text-[8px] text-zinc-400 uppercase tracking-widest font-mono bg-luxury-greenEmerald/10 text-luxury-greenEmerald px-1.5 py-0.5 rounded">Admin</span>
-              </button>
-            </div>
-          </div>
-
-          <p className="mt-6 text-center text-[10px] text-zinc-500">
-            Don't have an account? <Link href="/register" className="text-luxury-goldRoyal hover:underline font-semibold">Register Profile</Link>
-          </p>
+            </form>
+          )}
         </div>
+
+        <p className="mt-6 text-center text-[10px] text-zinc-500">
+          Don't have an account? <Link href="/register" className="text-luxury-goldRoyal hover:underline font-semibold">Register Profile</Link>
+        </p>
 
       </div>
     </div>

@@ -7,6 +7,8 @@ import {
   loginUserWithFirebase, 
   registerUserWithFirebase, 
   logoutUserWithFirebase, 
+  loginWithGoogle as loginWithGoogleApi,
+  forgotPassword as forgotPasswordApi,
   getStorageData, 
   setStorageData 
 } from "@/services/firebase";
@@ -16,6 +18,8 @@ interface AuthContextType {
   user: UserProfile | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<UserProfile>;
+  loginWithGoogle: () => Promise<UserProfile>;
+  forgotPassword: (email: string) => Promise<void>;
   register: (email: string, password: string, name: string, role: UserProfile["role"], fields?: Partial<UserProfile>) => Promise<UserProfile>;
   logout: () => Promise<void>;
 }
@@ -62,6 +66,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(profile);
       setStorageData("activeUser", profile);
       return profile;
+    } catch (error) {
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loginWithGoogle = async () => {
+    setLoading(true);
+    try {
+      const profile = await loginWithGoogleApi();
+      setUser(profile);
+      setStorageData("activeUser", profile);
+      return profile;
+    } catch (error) {
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const forgotPassword = async (email: string) => {
+    setLoading(true);
+    try {
+      await forgotPasswordApi(email);
     } catch (error) {
       throw error;
     } finally {

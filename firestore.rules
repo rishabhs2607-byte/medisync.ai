@@ -5,32 +5,32 @@ service cloud.firestore {
     // ==========================================
     // HELPER FUNCTIONS
     // ==========================================
-    
+
     // Checks if the request is authenticated
     function isAuthenticated() {
       return request.auth != null;
     }
-    
+
     // Checks if the authenticated user is accessing their own document
     function isOwner(userId) {
       return isAuthenticated() && request.auth.uid == userId;
     }
-    
+
     // Gets the current user's profile data from Firestore
     function getUserData() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
-    
+
     // Checks if the user has a specific role
     function hasRole(role) {
-      return isAuthenticated() && 
+      return isAuthenticated() &&
         exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
         getUserData().role == role;
     }
 
     // Checks if the user is an approved clinician/entity
     function isApproved() {
-      return isAuthenticated() && 
+      return isAuthenticated() &&
         exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
         getUserData().status == 'approved';
     }
@@ -40,14 +40,19 @@ service cloud.firestore {
       return hasRole('admin');
     }
 
-    // Checks if the user is a doctor
-    function isDoctor() {
-      return hasRole('doctor');
+    // Checks if the user is an approved doctor
+    function isApprovedDoctor() {
+      return hasRole('doctor') && isApproved();
     }
 
     // Checks if the user is a hospital user
     function isHospital() {
       return hasRole('hospital');
+    }
+
+    // Checks if the user is a patient
+    function isPatient() {
+      return hasRole('patient');
     }
 
     // ==========================================
@@ -56,98 +61,131 @@ service cloud.firestore {
 
     // 1. Users Profile Collection
     match /users/{userId} {
-      // Any authenticated user can view other users' profile structures (e.g., patients viewing doctors, doctors viewing patients)
+      // Any authenticated user can view user profiles
+      // (needed so doctors can look up patient profiles, etc.)
       allow read: if isAuthenticated();
-      
+
       // Users can only create their own profile during registration
       allow create: if isAuthenticated() && request.auth.uid == userId;
-      
-      // Users can update their own profile (e.g., update availability, details), or admins can update everything (e.g., approving doctor license)
+
+      // Users can update their own non-role/non-status fields.
+      // Admins can update everything (e.g., status, role changes).
       allow update: if isOwner(userId) || isAdmin();
-      
+
       // Only admins can delete user profiles
       allow delete: if isAdmin();
     }
 
-    // 2. Patient Clinical Records (including vitals, allergies, family members, reports)
+    // 2. Doctor Applications — Pending verification queue
+    match /doctorApplications/{applicationId} {
+      // Doctors can read and create their own application
+      allow read: if isAuthenticated() && (request.auth.uid == applicationId || isAdmin());
+
+      // A new doctor can create their own application record
+      allow create: if isAuthenticated() && request.auth.uid == applicationId;
+
+      // Only admins can update the application status (approve/reject/suspend)
+      allow update: if isAdmin();
+
+      // Only admins can delete application records
+      allow delete: if isAdmin();
+    }
+
+    // 3. Patient Clinical Records (vitals, allergies, family members, reports)
     match /patients/{patientId} {
       // Patients can read/write their own clinical file.
       // Approved doctors, hospital users, and admins can view/write patient records.
-      allow read: if isOwner(patientId) || (isApproved() && (isDoctor() || isHospital() || isAdmin()));
-      allow write: if isOwner(patientId) || (isApproved() && (isDoctor() || isHospital() || isAdmin()));
-      
+      allow read: if isOwner(patientId) || (isApproved() && (isApprovedDoctor() || isHospital() || isAdmin()));
+      allow write: if isOwner(patientId) || (isApproved() && (isApprovedDoctor() || isHospital() || isAdmin()));
+
       // Sub-collections under patients (e.g., patient reports, telemetry history)
       match /{allSubcollections=**} {
-        allow read, write: if isOwner(patientId) || (isApproved() && (isDoctor() || isHospital() || isAdmin()));
+        allow read, write: if isOwner(patientId) || (isApproved() && (isApprovedDoctor() || isHospital() || isAdmin()));
       }
     }
 
-    // 3. Appointments
+    // 4. Hospital Profiles
+    match /hospitals/{hospitalId} {
+      // Admins and the hospital itself can read hospital data
+      allow read: if isAuthenticated() && (isOwner(hospitalId) || isAdmin() || isApprovedDoctor());
+
+      // Hospital can create their own document
+      allow create: if isAuthenticated() && request.auth.uid == hospitalId;
+
+      // Hospital can update their own data, admins can update anything
+      allow update: if isOwner(hospitalId) || isAdmin();
+
+      // Only admins can delete hospital records
+      allow delete: if isAdmin();
+    }
+
+    // 5. Appointments
     match /appointments/{appointmentId} {
       // Authenticated users can read appointments if they are the patient or doctor in it, or are hospital/admin
       allow read: if isAuthenticated() && (
-        request.auth.uid == resource.data.patientId || 
-        request.auth.uid == resource.data.doctorId || 
+        request.auth.uid == resource.data.patientId ||
+        request.auth.uid == resource.data.doctorId ||
         (isApproved() && (isHospital() || isAdmin()))
       );
-      
-      // Patients can schedule, and doctors/hospitals/admins can schedule/modify appointments
+
+      // Patients can schedule, and approved doctors/hospitals/admins can schedule/modify
       allow create: if isAuthenticated() && (
-        request.resource.data.patientId == request.auth.uid || 
-        (isApproved() && (isDoctor() || isHospital() || isAdmin()))
+        request.resource.data.patientId == request.auth.uid ||
+        (isApproved() && (isApprovedDoctor() || isHospital() || isAdmin()))
       );
-      
+
       allow update: if isAuthenticated() && (
-        request.auth.uid == resource.data.patientId || 
-        request.auth.uid == resource.data.doctorId || 
+        request.auth.uid == resource.data.patientId ||
+        request.auth.uid == resource.data.doctorId ||
         (isApproved() && (isHospital() || isAdmin()))
       );
-      
+
       allow delete: if isAdmin() || (isApproved() && isHospital());
     }
 
-    // 4. Clinical Prescriptions
+    // 6. Clinical Prescriptions
     match /prescriptions/{prescriptionId} {
-      // Patients can read their own prescriptions. Doctors, hospitals, and admins can read all.
+      // Patients can read their own prescriptions. Approved doctors, hospitals, and admins can read all.
       allow read: if isAuthenticated() && (
-        request.auth.uid == resource.data.patientId || 
-        (isApproved() && (isDoctor() || isHospital() || isAdmin()))
+        request.auth.uid == resource.data.patientId ||
+        (isApproved() && (isApprovedDoctor() || isHospital() || isAdmin()))
       );
-      
+
       // Only approved doctors and admins can write/create prescriptions
       allow create, update: if isAuthenticated() && (
-        (isApproved() && isDoctor() && request.resource.data.doctorId == request.auth.uid) || 
+        (isApprovedDoctor() && request.resource.data.doctorId == request.auth.uid) ||
         isAdmin()
       );
-      
+
       // Only admins can delete prescriptions
       allow delete: if isAdmin();
     }
 
-    // 5. Emergency Alerts
+    // 7. Emergency Alerts
     match /alerts/{alertId} {
-      // Anyone authenticated can read/write alerts (so devices, patients, and doctors can generate alerts)
+      // Patients can read their own alerts; approved clinical staff can read all
       allow read: if isAuthenticated() && (
-        request.auth.uid == resource.data.patientId || 
-        (isApproved() && (isDoctor() || isHospital() || isAdmin()))
+        request.auth.uid == resource.data.patientId ||
+        (isApproved() && (isApprovedDoctor() || isHospital() || isAdmin()))
       );
-      
-      // Any authenticated user/device can trigger or resolve an alert for themselves, and clinicians can manage them
+
+      // Any authenticated user or device can create/update an alert for themselves
+      // Approved clinical staff can manage alerts for any patient
       allow create, update: if isAuthenticated();
-      
+
       // Only admins can delete alerts
       allow delete: if isAdmin();
     }
 
-    // 6. Active Consultation Sessions (Telemedicine Room Recovery & Chats)
+    // 8. Active Consultation Sessions (Telemedicine Room Recovery & Chats)
     match /sessions/{sessionId} {
-      // Patients and doctors actively assigned to the session can read and write
+      // Patients and doctors assigned to the session can read and write
       allow read, write: if isAuthenticated() && (
-        request.auth.uid == resource.data.patientId || 
+        request.auth.uid == resource.data.patientId ||
         request.auth.uid == resource.data.doctorId ||
         isAdmin()
       );
-      
+
       // Nested messages, WebRTC signaling nodes, and chat sub-collections
       match /{allSubcollections=**} {
         allow read, write: if isAuthenticated() && (
@@ -156,6 +194,54 @@ service cloud.firestore {
           isAdmin()
         );
       }
+    }
+
+    // 8.5 WebRTC Video Rooms
+    match /rooms/{roomId} {
+      // Any authenticated user can read (needed for lobby) or create a room
+      allow read, create: if isAuthenticated();
+      
+      allow update: if isAuthenticated() && (
+        resource.data.patientId == request.auth.uid || 
+        request.resource.data.doctorId == request.auth.uid ||
+        resource.data.doctorId == request.auth.uid ||
+        isAdmin()
+      );
+
+      // Subcollections for WebRTC signaling and chat
+      match /callerCandidates/{id} {
+        allow read, write: if isAuthenticated();
+      }
+      match /calleeCandidates/{id} {
+        allow read, write: if isAuthenticated();
+      }
+      match /messages/{id} {
+        allow read, write: if isAuthenticated();
+      }
+    }
+
+
+    // 9. Audit Logs — Admin-only write access, admin-only read
+    match /auditLogs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isAuthenticated(); // written server-side via cloud functions ideally
+      allow update, delete: if false; // logs are immutable
+    }
+
+    // 10. IoT Device Registry — ESP32 device pairing records
+    match /devices/{deviceId} {
+      // Patients owning the device and admins/approved staff can read
+      allow read: if isAuthenticated() && (
+        request.auth.uid == resource.data.patientId ||
+        (isApproved() && (isApprovedDoctor() || isHospital() || isAdmin()))
+      );
+
+      // Patients can register their own device, admins can manage all
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && (
+        request.auth.uid == resource.data.patientId || isAdmin()
+      );
+      allow delete: if isAdmin();
     }
   }
 }
