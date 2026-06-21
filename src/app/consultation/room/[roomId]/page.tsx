@@ -517,7 +517,7 @@ export default function ConsultationRoom() {
                   </span>
                 )}
               </span>
-              <Shield size={12} className="text-zinc-600" title="End-to-end encrypted" />
+              <span title="End-to-end encrypted"><Shield size={12} className="text-zinc-600" /></span>
             </div>
 
             <div className="flex-1 overflow-y-auto p-3 space-y-3">
