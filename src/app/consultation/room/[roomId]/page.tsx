@@ -517,7 +517,7 @@ export default function ConsultationRoom() {
                   </span>
                 )}
               </span>
-              <span title="End-to-end encrypted"><Shield size={12} className="text-zinc-600" /></span>
+              <span title="End-to-end encrypted"><Shield size={12} className="text-zinc-600" /></span> {/* Bust Vercel Cache */}
             </div>
 
             <div className="flex-1 overflow-y-auto p-3 space-y-3">
