@@ -14,9 +14,14 @@ import {
   getFirestore, 
   doc, 
   setDoc, 
-  getDoc 
+  getDoc,
+  updateDoc,
+  collection,
+  query,
+  where,
+  onSnapshot,
 } from "firebase/firestore";
-import { getDatabase } from "firebase/database";
+import { getDatabase, ref, set, onValue } from "firebase/database";
 import { getStorage } from "firebase/storage";
 
 // Real-world Firebase credentials fallback
@@ -54,6 +59,12 @@ export interface UserProfile {
   specialty?: string;
   workload?: number;
   emergencyLevel?: number;
+  // Patient profile fields
+  age?: number;
+  gender?: string;
+  bloodType?: string;
+  phone?: string;
+  address?: string;
 }
 
 export interface DoctorApplication {
@@ -239,6 +250,90 @@ export const findBestDoctor = (specialtyNeeded: string, emergencyLevel: number) 
 
   scoredPool.sort((a, b) => b.score - a.score);
   return scoredPool[0].doc;
+};
+
+// ==========================================
+// NEW: UPDATE USER PROFILE
+// ==========================================
+export const updateUserProfile = async (uid: string, fields: Partial<UserProfile>): Promise<void> => {
+  // Update localStorage
+  const localDb = getMediSyncDb();
+  const userIdx = localDb.users.findIndex(u => u.uid === uid);
+  if (userIdx !== -1) {
+    localDb.users[userIdx] = { ...localDb.users[userIdx], ...fields };
+    saveMediSyncDb(localDb);
+    setStorageData("activeUser", localDb.users[userIdx]);
+  }
+  // Update patient record if relevant
+  if (fields.name || fields.age || fields.gender || fields.bloodType) {
+    const patIdx = localDb.patients.findIndex(p => p.uid === uid);
+    if (patIdx !== -1) {
+      if (fields.name) localDb.patients[patIdx].name = fields.name;
+      if (fields.age !== undefined) localDb.patients[patIdx].age = fields.age;
+      if (fields.gender) localDb.patients[patIdx].gender = fields.gender;
+      if (fields.bloodType) localDb.patients[patIdx].bloodType = fields.bloodType;
+      saveMediSyncDb(localDb);
+    }
+  }
+  // Sync to Firestore
+  try {
+    await updateDoc(doc(db, "users", uid), fields as Record<string, any>);
+  } catch (e) {
+    console.warn("Firestore profile update failed, local update applied", e);
+  }
+};
+
+// ==========================================
+// NEW: WRITE PATIENT VITALS TO FIRESTORE (so doctor can see them live)
+// ==========================================
+export const writePatientVitalsToFirestore = async (
+  patientId: string,
+  patientName: string,
+  vitals: PatientRecord["vitals"]
+): Promise<void> => {
+  try {
+    await setDoc(doc(db, "patient_vitals", patientId), {
+      patientId,
+      patientName,
+      vitals,
+      updatedAt: new Date().toISOString(),
+    });
+  } catch (e) {
+    // Silently fail — vitals in local DB still work
+  }
+};
+
+// ==========================================
+// NEW: SUBSCRIBE TO PATIENT VITALS (for doctor)
+// ==========================================
+export const subscribeToPatientVitals = (
+  patientId: string,
+  callback: (vitals: PatientRecord["vitals"] | null, patientName: string) => void
+): (() => void) => {
+  const unsub = onSnapshot(doc(db, "patient_vitals", patientId), (snap) => {
+    if (snap.exists()) {
+      const data = snap.data();
+      callback(data.vitals, data.patientName || "");
+    } else {
+      callback(null, "");
+    }
+  });
+  return unsub;
+};
+
+// ==========================================
+// NEW: SUBSCRIBE TO WAITING ROOMS (for doctor)
+// ==========================================
+export const subscribeToWaitingRooms = (
+  callback: (rooms: any[]) => void
+): (() => void) => {
+  const roomsRef = collection(db, "rooms");
+  const q = query(roomsRef, where("status", "==", "waiting"));
+  const unsub = onSnapshot(q, (snap) => {
+    const rooms = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    callback(rooms);
+  });
+  return unsub;
 };
 
 // ==========================================
@@ -481,7 +576,14 @@ export const loginUserWithFirebase = async (
       const docRef = doc(db, "users", user.uid);
       const docSnap = await getDoc(docRef);
       if (docSnap.exists()) {
-        return docSnap.data() as UserProfile;
+        const profile = docSnap.data() as UserProfile;
+        // Sync to local
+        const localDb = getMediSyncDb();
+        const idx = localDb.users.findIndex(u => u.uid === profile.uid);
+        if (idx !== -1) localDb.users[idx] = profile;
+        else localDb.users.push(profile);
+        saveMediSyncDb(localDb);
+        return profile;
       }
     } catch (e) {
       console.warn("Firestore read failed, searching local registry fallback", e);

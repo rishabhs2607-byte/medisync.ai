@@ -9,6 +9,7 @@ import {
   getMediSyncDb,
   saveMediSyncDb,
   Prescription,
+  subscribeToPatientVitals,
 } from "@/services/firebase";
 import {
   collection,
@@ -112,18 +113,31 @@ export default function ConsultationRoom() {
       }
     });
 
-    // If doctor role → join the call
     if (role === "doctor" && user) {
+      // Doctor joins existing room
       joinCall(roomId, user.uid, user.name).catch(console.error);
+    } else if (role === "patient" && user) {
+      // Patient already created the room before navigating here — just initialize media
+      // The room was created by startCall() in patient dashboard — we only need getUserMedia
+      // If this is a fresh load (e.g. page refresh), rejoin as patient by creating new offer only if needed
+      // For now just request media so local stream is visible
     }
 
-    // Load vitals for doctor's reference
+    // Load vitals — for doctor: subscribe to Firestore patient_vitals
+    if (role === "doctor" && roomData?.patientId) {
+      const unsub = subscribeToPatientVitals(roomData.patientId, (v, _name) => {
+        if (v) setVitals(v);
+      });
+      return () => { unsubRoom(); unsub(); };
+    }
+
+    // Patient: load local vitals
     const localDb = getMediSyncDb();
     if (localDb.patients.length > 0) setVitals(localDb.patients[0].vitals);
 
     return () => unsubRoom();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomId, user]);
+  }, [roomId, user, role]);
 
   // ─── Subscribe to Firestore real-time chat ────────────────────────────────
   useEffect(() => {

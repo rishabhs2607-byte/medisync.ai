@@ -9,6 +9,7 @@ import {
   logoutUserWithFirebase, 
   loginWithGoogle as loginWithGoogleApi,
   forgotPassword as forgotPasswordApi,
+  updateUserProfile,
   getStorageData, 
   setStorageData 
 } from "@/services/firebase";
@@ -22,6 +23,7 @@ interface AuthContextType {
   forgotPassword: (email: string) => Promise<void>;
   register: (email: string, password: string, name: string, role: UserProfile["role"], fields?: Partial<UserProfile>) => Promise<UserProfile>;
   logout: () => Promise<void>;
+  updateProfile: (fields: Partial<UserProfile>) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -118,6 +120,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const updateProfileFn = async (fields: Partial<UserProfile>) => {
+    if (!user) return;
+    await updateUserProfile(user.uid, fields);
+    const updated = { ...user, ...fields };
+    setUser(updated);
+    setStorageData("activeUser", updated);
+  };
+
   const logout = async () => {
     setLoading(true);
     try {
@@ -132,7 +142,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, loginWithGoogle, forgotPassword, register, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, loginWithGoogle, forgotPassword, register, logout, updateProfile: updateProfileFn }}>
       {children}
     </AuthContext.Provider>
   );
