@@ -400,18 +400,8 @@ void setup() {
   config.api_key = FIREBASE_API_KEY;
   config.database_url = FIREBASE_DATABASE_URL;
   
-  /* Authenticate using Anonymous login (enable in Firebase console) */
-  auth.user.email = "";
-  auth.user.password = "";
-  
-  /* Alternative authentication methods:
-   * 1. Email/Password:
-   *    auth.user.email = "device@medisync.ai";
-   *    auth.user.password = "yourpassword";
-   * 
-   * 2. Database Secret (Legacy token):
-   *    config.signer.tokens.legacy_token = "your_database_secret";
-   */
+  /* Bypass authentication because RTDB rules for device_telemetry have .write = true */
+  config.signer.test_mode = true;
   
   Firebase.begin(&config, &auth);
   Firebase.reconnectWiFi(true);
