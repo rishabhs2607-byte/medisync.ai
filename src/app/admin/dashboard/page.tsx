@@ -17,7 +17,7 @@ import {
   collection,
   getDocs,
   doc,
-  updateDoc,
+  setDoc,
   query,
   orderBy,
   onSnapshot,
@@ -175,15 +175,7 @@ export default function AdminDashboard() {
     newStatus: "approved" | "pending" | "rejected" | "suspended",
     actionLabel: string
   ) => {
-    // 1. Try Firestore first
-    try {
-      await updateDoc(doc(firestoreDb, "doctorApplications", uid), { status: newStatus });
-      await updateDoc(doc(firestoreDb, "users", uid), { status: newStatus });
-    } catch (e) {
-      console.warn("Firestore update failed, writing to localStorage");
-    }
-
-    // 2. Always write to localStorage
+    // 1. Always write to localStorage first so we have the full object
     const currentDb = getMediSyncDb();
     const userIndex = currentDb.users.findIndex((u) => u.uid === uid);
     if (userIndex !== -1) currentDb.users[userIndex].status = newStatus;
@@ -192,6 +184,17 @@ export default function AdminDashboard() {
     saveMediSyncDb(currentDb);
     loadLocalDb();
     window.dispatchEvent(new Event("storage"));
+
+    // 2. Try Firestore (use setDoc with merge so it creates the document if missing)
+    try {
+      const fullProfile = userIndex !== -1 ? currentDb.users[userIndex] : { status: newStatus };
+      await setDoc(doc(firestoreDb, "users", uid), fullProfile, { merge: true });
+      
+      const fullApp = appIndex !== -1 ? currentDb.doctorApplications[appIndex] : { status: newStatus };
+      await setDoc(doc(firestoreDb, "doctorApplications", uid), fullApp, { merge: true });
+    } catch (e) {
+      console.warn("Firestore update failed, relying on localStorage", e);
+    }
 
     // 3. Update local Firestore cache
     setFirestoreApps((prev) =>

@@ -79,7 +79,7 @@ export default function PatientDashboard() {
         // Sync to local DB
         const dbInstance = getMediSyncDb();
         const p = dbInstance.patients.find(x => x.uid === patientId);
-        if (p && p.vitalsMode === "device") {
+        if (p) {
           p.vitals.temperature = parseFloat(tempVal.toFixed(1));
           p.vitals.lastUpdated = new Date(tsVal).toISOString();
           if (p.connectedDevice) {

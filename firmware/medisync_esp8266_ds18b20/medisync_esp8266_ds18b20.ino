@@ -439,6 +439,6 @@ void loop() {
     
     // Automatically perform measurement and sync
     performMeasurementAndUpload();
-    renderScreen("READY", "System Operational", "Press", "Start Measure");
+    renderScreen("READY", "System Operational", "Press", "Start");
   }
 }
