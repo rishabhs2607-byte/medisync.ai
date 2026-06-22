@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { getMediSyncDb, saveMediSyncDb, PatientRecord, Appointment, Prescription, EmergencyAlert, findBestDoctor } from "@/services/firebase";
+import { getMediSyncDb, saveMediSyncDb, PatientRecord, Appointment, Prescription, EmergencyAlert, findBestDoctor, rtdb } from "@/services/firebase";
+import { ref, onValue } from "firebase/database";
 import { analyzeVitals } from "@/services/aiEngine";
 import IoTSimulator from "@/components/IoTSimulator";
 import AuthGuard from "@/components/AuthGuard";
@@ -22,7 +23,8 @@ import {
   Bell,
   Cpu,
   ShieldCheck,
-  Stethoscope
+  Stethoscope,
+  Check
 } from "lucide-react";
 
 export default function PatientDashboard() {
@@ -35,6 +37,92 @@ export default function PatientDashboard() {
   const [matchingReason, setMatchingReason] = useState("");
   const [matchedDoctor, setMatchedDoctor] = useState<any>(null);
   const [isMatching, setIsMatching] = useState(false);
+
+  // IoT Thermometer states
+  const [liveTemp, setLiveTemp] = useState<number | null>(null);
+  const [liveTimestamp, setLiveTimestamp] = useState<number | null>(null);
+  const [liveRssi, setLiveRssi] = useState<number | null>(null);
+  const [tempHistory, setTempHistory] = useState<number[]>([]);
+  const [isDeviceOnline, setIsDeviceOnline] = useState<boolean>(false);
+  const [lastUpdatedText, setLastUpdatedText] = useState<string>("Never");
+
+  useEffect(() => {
+    if (!rtdb) return;
+
+    const deviceId = "thermometer_01";
+    const telemetryRef = ref(rtdb, `device_telemetry/${deviceId}`);
+
+    const unsubscribe = onValue(telemetryRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data && typeof data.temperature === "number") {
+        const tempVal = data.temperature;
+        const tsVal = data.timestamp || Date.now();
+        const rssiVal = typeof data.rssi === "number" ? data.rssi : null;
+
+        setLiveTemp(tempVal);
+        setLiveTimestamp(tsVal);
+        setLiveRssi(rssiVal);
+
+        setTempHistory((prev) => {
+          const next = [...prev, tempVal];
+          if (next.length > 12) {
+            next.shift();
+          }
+          return next;
+        });
+
+        // Sync with local database so health metrics and alerts are updated dynamically
+        const dbInstance = getMediSyncDb();
+        const p = dbInstance.patients.find(x => x.uid === "pat1");
+        if (p && p.vitalsMode === "device") {
+          p.vitals.temperature = parseFloat(tempVal.toFixed(1));
+          p.vitals.lastUpdated = new Date(tsVal).toISOString();
+          if (p.connectedDevice) {
+            p.connectedDevice.status = "online";
+            p.connectedDevice.lastSync = new Date(tsVal).toISOString();
+          } else {
+            p.connectedDevice = {
+              deviceId,
+              status: "online",
+              battery: 98,
+              lastSync: new Date(tsVal).toISOString()
+            };
+          }
+          saveMediSyncDb(dbInstance);
+        }
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [rtdb]);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (liveTimestamp) {
+        const diffMs = Date.now() - liveTimestamp;
+        const diffSec = Math.floor(diffMs / 1000);
+        
+        const online = diffSec <= 30;
+        setIsDeviceOnline(online);
+
+        if (diffSec < 5) {
+          setLastUpdatedText("Just now");
+        } else if (diffSec < 60) {
+          setLastUpdatedText(`${diffSec} seconds ago`);
+        } else {
+          const diffMin = Math.floor(diffSec / 60);
+          setLastUpdatedText(`${diffMin} minute${diffMin > 1 ? "s" : ""} ago`);
+        }
+      } else {
+        setIsDeviceOnline(false);
+        setLastUpdatedText("Never");
+      }
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [liveTimestamp]);
 
   const loadDb = () => {
     setDb(getMediSyncDb());
@@ -58,10 +146,12 @@ export default function PatientDashboard() {
 
   const activeAlerts = db.alerts.filter(a => a.patientId === patientId && a.status === "active");
 
+  const currentTemp = (liveTemp !== null && isDeviceOnline) ? parseFloat(liveTemp.toFixed(1)) : patient.vitals.temperature;
+
   const aiReport = analyzeVitals(
     patient.vitals.heartRate,
     patient.vitals.spo2,
-    patient.vitals.temperature,
+    currentTemp,
     patient.vitals.systolic,
     patient.vitals.diastolic,
     patient.vitals.glucose
@@ -222,10 +312,14 @@ export default function PatientDashboard() {
               <div className="bg-luxury-pureBlack border border-zinc-900 p-4 rounded-xl flex items-center justify-between">
                 <div>
                   <p className="text-[9px] text-zinc-500 uppercase tracking-widest font-mono">Body Temperature</p>
-                  <p className="text-3xl font-black mt-1 text-white">{patient.vitals.temperature}°C</p>
-                  <p className="text-[9px] text-zinc-400 mt-1 font-mono">Celsius</p>
+                  <p className={`text-3xl font-black mt-1 ${currentTemp > 38.0 ? "text-luxury-redCrimson" : "text-white"}`}>
+                    {currentTemp}°C
+                  </p>
+                  <p className="text-[9px] text-zinc-400 mt-1 font-mono">
+                    {currentTemp > 38.0 ? "Fever Detected" : "Celsius"}
+                  </p>
                 </div>
-                <div className="p-2.5 bg-luxury-goldRoyal/10 border border-luxury-goldRoyal/25 rounded-xl text-luxury-goldRoyal">
+                <div className={`p-2.5 rounded-xl border ${currentTemp > 38.0 ? "bg-luxury-redCrimson/10 border-luxury-redCrimson/25 text-luxury-redCrimson" : "bg-luxury-goldRoyal/10 border-luxury-goldRoyal/25 text-luxury-goldRoyal"}`}>
                   <Thermometer size={18} />
                 </div>
               </div>
@@ -282,6 +376,129 @@ export default function PatientDashboard() {
               <Link href="/ai-center" className="px-3.5 py-1.5 bg-luxury-goldRoyal hover:bg-luxury-goldRoyal/90 text-luxury-pureBlack rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors">
                 Run AI Diagnostic
               </Link>
+            </div>
+          </div>
+
+          {/* MediSync Thermometer IoT Panel */}
+          <div className="glass-panel p-6 rounded-2xl border border-luxury-goldRoyal/10 bg-luxury-richBlack/60 relative overflow-hidden animate-glow-gold">
+            <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-luxury-goldRoyal/10 to-transparent blur-xl pointer-events-none" />
+            
+            <div className="flex items-center justify-between border-b border-zinc-900 pb-4 mb-6">
+              <h2 className="text-sm font-extrabold uppercase tracking-wider text-luxury-goldRoyal flex items-center gap-2">
+                <Thermometer className="text-luxury-goldRoyal animate-pulse" size={16} /> 
+                MediSync Thermometer (IoT)
+              </h2>
+              <div className="flex items-center gap-2">
+                <span className={`w-2 h-2 rounded-full ${isDeviceOnline ? "bg-luxury-greenEmerald animate-pulse" : "bg-zinc-650"}`} />
+                <span className="text-[10px] text-zinc-400 font-mono uppercase">
+                  {isDeviceOnline ? "Online" : "Offline"}
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+              {/* Live Temperature & Fever Alert */}
+              <div className="bg-luxury-pureBlack border border-zinc-900 p-4 rounded-xl flex flex-col justify-between relative overflow-hidden">
+                {liveTemp !== null && isDeviceOnline && liveTemp > 38.0 && (
+                  <div className="absolute top-0 left-0 right-0 h-1 bg-luxury-redCrimson animate-pulse" />
+                )}
+                <div>
+                  <p className="text-[9px] text-zinc-500 uppercase tracking-widest font-mono">Live Temperature</p>
+                  <div className="flex items-baseline gap-2 mt-1">
+                    <p className={`text-4xl font-black ${liveTemp !== null && isDeviceOnline && liveTemp > 38.0 ? "text-luxury-redCrimson" : "text-white"}`}>
+                      {liveTemp !== null && isDeviceOnline ? `${liveTemp.toFixed(1)}` : "--.-"}
+                    </p>
+                    <span className="text-xs text-zinc-400 font-bold font-mono">°C</span>
+                  </div>
+                </div>
+                
+                <div className="mt-4">
+                  {liveTemp !== null && isDeviceOnline ? (
+                    liveTemp > 38.0 ? (
+                      <div className="flex items-center gap-1.5 text-[9px] text-luxury-redCrimson font-bold uppercase font-mono bg-luxury-redCrimson/10 border border-luxury-redCrimson/20 px-2 py-1 rounded">
+                        <AlertTriangle size={10} /> Fever Alert (&gt;38°C)
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1.5 text-[9px] text-luxury-greenEmerald font-bold uppercase font-mono bg-luxury-greenEmerald/10 border border-luxury-greenEmerald/20 px-2 py-1 rounded">
+                        <Check size={10} /> Normal Range
+                      </div>
+                    )
+                  ) : (
+                    <div className="flex items-center gap-1.5 text-[9px] text-zinc-500 font-bold uppercase font-mono bg-zinc-900 border border-zinc-800 px-2 py-1 rounded">
+                      Waiting for connection
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Device Info & Last Sync */}
+              <div className="bg-luxury-pureBlack border border-zinc-900 p-4 rounded-xl flex flex-col justify-between">
+                <div>
+                  <p className="text-[9px] text-zinc-500 uppercase tracking-widest font-mono">Device ID</p>
+                  <p className="text-sm font-bold text-white mt-1 font-mono">thermometer_01</p>
+                </div>
+                <div>
+                  <p className="text-[9px] text-zinc-500 uppercase tracking-widest font-mono">Last Synchronized</p>
+                  <p className="text-[10px] text-zinc-300 font-mono mt-1">{lastUpdatedText}</p>
+                </div>
+              </div>
+
+              {/* WiFi Strength Metric */}
+              <div className="bg-luxury-pureBlack border border-zinc-900 p-4 rounded-xl flex flex-col justify-between">
+                <div>
+                  <p className="text-[9px] text-zinc-500 uppercase tracking-widest font-mono">WiFi Connection</p>
+                  {isDeviceOnline && liveRssi !== null ? (
+                    <div className="mt-1">
+                      <p className="text-sm font-bold text-white font-mono">{liveRssi} dBm</p>
+                      <p className="text-[9px] text-luxury-blueElectric font-mono font-semibold uppercase mt-0.5">
+                        Signal: {liveRssi >= -50 ? "Excellent" : liveRssi >= -70 ? "Good" : liveRssi >= -85 ? "Fair" : "Weak"}
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-sm font-bold text-zinc-500 mt-1 font-mono">Offline</p>
+                  )}
+                </div>
+                <div>
+                  <div className="flex gap-0.5 items-end h-3 mt-2">
+                    <div className={`w-1 h-1.5 rounded-sm ${isDeviceOnline && liveRssi !== null && liveRssi >= -90 ? "bg-luxury-blueElectric" : "bg-zinc-800"}`} />
+                    <div className={`w-1 h-2 rounded-sm ${isDeviceOnline && liveRssi !== null && liveRssi >= -85 ? "bg-luxury-blueElectric" : "bg-zinc-800"}`} />
+                    <div className={`w-1 h-2.5 rounded-sm ${isDeviceOnline && liveRssi !== null && liveRssi >= -75 ? "bg-luxury-blueElectric" : "bg-zinc-800"}`} />
+                    <div className={`w-1 h-3 rounded-sm ${isDeviceOnline && liveRssi !== null && liveRssi >= -60 ? "bg-luxury-blueElectric" : "bg-zinc-800"}`} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Sparkline / History Graph */}
+              <div className="bg-luxury-pureBlack border border-zinc-900 p-4 rounded-xl flex flex-col justify-between col-span-1">
+                <div>
+                  <p className="text-[9px] text-zinc-500 uppercase tracking-widest font-mono mb-2">Temperature Trend</p>
+                  <div className="h-10 flex items-end gap-1.5 pb-1">
+                    {tempHistory.length === 0 ? (
+                      <span className="text-[9px] text-zinc-650 font-mono">Waiting for readings...</span>
+                    ) : (
+                      tempHistory.map((val, idx) => {
+                        const minVal = 34.0;
+                        const maxVal = 42.0;
+                        const percent = Math.min(100, Math.max(10, ((val - minVal) / (maxVal - minVal)) * 100));
+                        const isHigh = val > 38.0;
+                        return (
+                          <div
+                            key={idx}
+                            style={{ height: `${percent}%` }}
+                            className={`w-full rounded-t-sm transition-all duration-300 ${
+                              isHigh ? "bg-luxury-redCrimson" : "bg-luxury-goldRoyal"
+                            }`}
+                          />
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+                <div className="flex justify-between items-center text-[8px] text-zinc-500 font-mono border-t border-zinc-900 pt-1.5">
+                  <span>34°C</span>
+                  <span>42°C</span>
+                </div>
+              </div>
             </div>
           </div>
 

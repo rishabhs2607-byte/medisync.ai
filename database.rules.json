@@ -45,6 +45,13 @@
         ".read": "auth != null",
         ".write": "auth != null && (auth.uid == $userId || root.child('users').child(auth.uid).child('role').val() == 'admin')"
       }
+    },
+    // Device telemetry endpoint for IoT thermometers
+    "device_telemetry": {
+      "$deviceId": {
+        ".read": "true",
+        ".write": "true"
+      }
     }
   }
 }
