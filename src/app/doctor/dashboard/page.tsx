@@ -395,11 +395,11 @@ export default function DoctorDashboard() {
               {/* Vitals Grid */}
               <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                 {[
-                  { label: "HEART RATE", value: `${selectedPatient.vitals.heartRate} bpm`, color: "text-luxury-redCrimson" },
-                  { label: "SPO2", value: `${selectedPatient.vitals.spo2}%`, color: "text-luxury-blueElectric" },
-                  { label: "TEMP", value: `${selectedPatient.vitals.temperature}°F`, color: "text-luxury-goldRoyal" },
-                  { label: "BP", value: `${selectedPatient.vitals.systolic}/${selectedPatient.vitals.diastolic}`, color: "text-luxury-greenEmerald" },
-                  { label: "GLUCOSE", value: `${selectedPatient.vitals.glucose}`, color: "text-amber-500" },
+                  { label: "HEART RATE", value: selectedPatient.vitals.heartRate ? `${selectedPatient.vitals.heartRate} bpm` : '--', color: "text-luxury-redCrimson" },
+                  { label: "SPO2", value: selectedPatient.vitals.spo2 ? `${selectedPatient.vitals.spo2}%` : '--', color: "text-luxury-blueElectric" },
+                  { label: "TEMP", value: selectedPatient.vitals.temperature ? `${selectedPatient.vitals.temperature}°F` : '--', color: "text-luxury-goldRoyal" },
+                  { label: "BP", value: selectedPatient.vitals.systolic ? `${selectedPatient.vitals.systolic}/${selectedPatient.vitals.diastolic}` : '--', color: "text-luxury-greenEmerald" },
+                  { label: "GLUCOSE", value: selectedPatient.vitals.glucose ? `${selectedPatient.vitals.glucose}` : '--', color: "text-amber-500" },
                 ].map(v => (
                   <div key={v.label} className="glass-panel p-4 rounded-xl border border-white/5 bg-luxury-pureBlack/60 text-center">
                     <p className="text-[9px] text-zinc-500 font-mono uppercase tracking-wider">{v.label}</p>

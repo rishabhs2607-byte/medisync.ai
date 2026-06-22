@@ -340,7 +340,7 @@ export default function PatientDashboard() {
                 <div className="bg-luxury-pureBlack border border-zinc-900 p-4 rounded-xl flex items-center justify-between">
                   <div>
                     <p className="text-[9px] text-zinc-500 uppercase tracking-widest font-mono">Heart Rate</p>
-                    <p className="text-3xl font-black mt-1 text-white">{patient.vitals.heartRate}</p>
+                    <p className="text-3xl font-black mt-1 text-white">{patient.vitals.heartRate || '--'}</p>
                     <p className="text-[9px] text-zinc-400 mt-1 font-mono">BPM</p>
                   </div>
                   <div className="p-2.5 bg-luxury-redCrimson/10 border border-luxury-redCrimson/25 rounded-xl text-luxury-redCrimson">
@@ -352,8 +352,8 @@ export default function PatientDashboard() {
                 <div className="bg-luxury-pureBlack border border-zinc-900 p-4 rounded-xl flex items-center justify-between">
                   <div>
                     <p className="text-[9px] text-zinc-500 uppercase tracking-widest font-mono">Oxygen Sat.</p>
-                    <p className="text-3xl font-black mt-1 text-white">{patient.vitals.spo2}%</p>
-                    <p className="text-[9px] text-zinc-400 mt-1 font-mono">{patient.vitals.spo2 < 90 ? "Hypoxia Alert" : "Stable"}</p>
+                    <p className="text-3xl font-black mt-1 text-white">{patient.vitals.spo2 ? `${patient.vitals.spo2}%` : '--'}</p>
+                    <p className="text-[9px] text-zinc-400 mt-1 font-mono">{patient.vitals.spo2 ? (patient.vitals.spo2 < 90 ? "Hypoxia Alert" : "Stable") : '--'}</p>
                   </div>
                   <div className="p-2.5 bg-luxury-blueElectric/10 border border-luxury-blueElectric/25 rounded-xl text-luxury-blueElectric">
                     <Wind size={18} />
@@ -365,9 +365,9 @@ export default function PatientDashboard() {
                   <div>
                     <p className="text-[9px] text-zinc-500 uppercase tracking-widest font-mono">Body Temp</p>
                     <p className={`text-3xl font-black mt-1 ${currentTemp > 100.4 ? "text-luxury-redCrimson" : "text-white"}`}>
-                      {currentTemp.toFixed(1)}°F
+                      {currentTemp ? `${currentTemp.toFixed(1)}°F` : '--'}
                     </p>
-                    <p className="text-[9px] text-zinc-400 mt-1 font-mono">{currentTemp > 100.4 ? "⚠ Fever" : "Normal"}</p>
+                    <p className="text-[9px] text-zinc-400 mt-1 font-mono">{currentTemp ? (currentTemp > 100.4 ? "⚠ Fever" : "Normal") : '--'}</p>
                   </div>
                   <div className={`p-2.5 rounded-xl border ${currentTemp > 100.4 ? "bg-luxury-redCrimson/10 border-luxury-redCrimson/25 text-luxury-redCrimson" : "bg-luxury-goldRoyal/10 border-luxury-goldRoyal/25 text-luxury-goldRoyal"}`}>
                     <Thermometer size={18} />
@@ -378,7 +378,7 @@ export default function PatientDashboard() {
                 <div className="bg-luxury-pureBlack border border-zinc-900 p-4 rounded-xl flex items-center justify-between">
                   <div>
                     <p className="text-[9px] text-zinc-500 uppercase tracking-widest font-mono">Blood Pressure</p>
-                    <p className="text-2xl font-black mt-1 text-white">{patient.vitals.systolic}/{patient.vitals.diastolic}</p>
+                    <p className="text-2xl font-black mt-1 text-white">{patient.vitals.systolic ? `${patient.vitals.systolic}/${patient.vitals.diastolic}` : '--'}</p>
                     <p className="text-[9px] text-zinc-400 mt-2 font-mono">mmHg</p>
                   </div>
                   <div className="p-2.5 bg-luxury-greenEmerald/10 border border-luxury-greenEmerald/25 rounded-xl text-luxury-greenEmerald">
@@ -390,7 +390,7 @@ export default function PatientDashboard() {
                 <div className="bg-luxury-pureBlack border border-zinc-900 p-4 rounded-xl flex items-center justify-between">
                   <div>
                     <p className="text-[9px] text-zinc-500 uppercase tracking-widest font-mono">Blood Sugar</p>
-                    <p className="text-3xl font-black mt-1 text-white">{patient.vitals.glucose}</p>
+                    <p className="text-3xl font-black mt-1 text-white">{patient.vitals.glucose || '--'}</p>
                     <p className="text-[9px] text-zinc-400 mt-1 font-mono">mg/dL</p>
                   </div>
                   <div className="p-2.5 bg-amber-500/10 border border-amber-500/25 rounded-xl text-amber-500">

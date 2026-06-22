@@ -397,12 +397,12 @@ export const registerUserWithFirebase = async (
           history: [],
           vitalsMode: "manual",
           vitals: {
-            heartRate: 72,
-            spo2: 98,
-            temperature: 97.9,
-            systolic: 120,
-            diastolic: 80,
-            glucose: 95,
+            heartRate: 0,
+            spo2: 0,
+            temperature: 0,
+            systolic: 0,
+            diastolic: 0,
+            glucose: 0,
             fallDetected: false,
             ecg: [],
             lastUpdated: new Date().toISOString()
@@ -525,7 +525,7 @@ export const registerUserWithFirebase = async (
         medications: [],
         history: [],
         vitalsMode: "manual",
-        vitals: { heartRate: 72, spo2: 98, temperature: 97.7, systolic: 120, diastolic: 80, glucose: 90, fallDetected: false, ecg: [], lastUpdated: new Date().toISOString() },
+        vitals: { heartRate: 0, spo2: 0, temperature: 0, systolic: 0, diastolic: 0, glucose: 0, fallDetected: false, ecg: [], lastUpdated: new Date().toISOString() },
         connectedDevice: null,
         familyMembers: [],
         reports: []

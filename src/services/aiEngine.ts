@@ -41,7 +41,9 @@ export const analyzeVitals = (
   
   // SpO2 Analysis
   let spo2Status = "Normal";
-  if (spo2 < 90) {
+  if (spo2 === 0) {
+    spo2Status = "Awaiting Data";
+  } else if (spo2 < 90) {
     spo2Status = "Critical Hypoxia";
     scorePoints -= 35;
     recommendations.push("Administer emergency oxygen immediately. Monitor lung sounds.");
@@ -53,7 +55,9 @@ export const analyzeVitals = (
 
   // Heart Rate Analysis
   let hrStatus = "Normal";
-  if (heartRate > 130) {
+  if (heartRate === 0) {
+    hrStatus = "Awaiting Data";
+  } else if (heartRate > 130) {
     hrStatus = "Tachycardia (Critical)";
     scorePoints -= 25;
     recommendations.push("Rest immediately. Avoid stimulants. Apply cool compress.");
@@ -61,11 +65,11 @@ export const analyzeVitals = (
     hrStatus = "Elevated (Tachycardia)";
     scorePoints -= 8;
     recommendations.push("Hydrate well, check for signs of fever or physical overexertion.");
-  } else if (heartRate < 45 && heartRate > 0) {
+  } else if (heartRate < 45) {
     hrStatus = "Bradycardia (Critical)";
     scorePoints -= 25;
     recommendations.push("Assess responsiveness. Check pulse points. Prepare emergency cardiac support.");
-  } else if (heartRate < 60 && heartRate > 0) {
+  } else if (heartRate < 60) {
     hrStatus = "Bradycardia (Mild)";
     scorePoints -= 5;
     recommendations.push("Review medications for beta-blockers. Monitor for dizziness.");
@@ -73,7 +77,9 @@ export const analyzeVitals = (
 
   // Temperature Analysis
   let tempStatus = "Normal";
-  if (temp > 102.2) {
+  if (temp === 0) {
+    tempStatus = "Awaiting Data";
+  } else if (temp > 102.2) {
     tempStatus = "Hyperpyrexia (High Fever)";
     scorePoints -= 15;
     recommendations.push("Administer antipyretics (acetaminophen/ibuprofen) as prescribed. Hydrate.");
@@ -89,7 +95,9 @@ export const analyzeVitals = (
 
   // Blood Pressure Analysis
   let bpStatus = "Normal";
-  if (systolic >= 160 || diastolic >= 100) {
+  if (systolic === 0 || diastolic === 0) {
+    bpStatus = "Awaiting Data";
+  } else if (systolic >= 160 || diastolic >= 100) {
     bpStatus = "Stage 2 Hypertension (Severe)";
     scorePoints -= 20;
     recommendations.push("Requires urgent medical evaluation. Limit sodium. Review BP meds.");
@@ -105,7 +113,9 @@ export const analyzeVitals = (
 
   // Glucose Analysis
   let glucStatus = "Normal";
-  if (glucose > 180) {
+  if (glucose === 0) {
+    glucStatus = "Awaiting Data";
+  } else if (glucose > 180) {
     glucStatus = "Hyperglycemia (Severe)";
     scorePoints -= 15;
     recommendations.push("Check urine for ketones. Insure insulin adherence. Drink plenty of water.");
@@ -139,11 +149,11 @@ export const analyzeVitals = (
     healthScore: Math.max(10, scorePoints),
     riskLevel,
     vitalsStatus: {
-      heartRate: hrStatus,
-      spo2: spo2Status,
-      temperature: `${temp.toFixed(1)}°F (${tempStatus})`,
-      bloodPressure: `${systolic}/${diastolic} mmHg (${bpStatus})`,
-      glucose: `${glucose} mg/dL (${glucStatus})`
+      heartRate: heartRate === 0 ? "Awaiting Data" : hrStatus,
+      spo2: spo2 === 0 ? "Awaiting Data" : spo2Status,
+      temperature: temp === 0 ? "Awaiting Data" : `${temp.toFixed(1)}°F (${tempStatus})`,
+      bloodPressure: systolic === 0 ? "Awaiting Data" : `${systolic}/${diastolic} mmHg (${bpStatus})`,
+      glucose: glucose === 0 ? "Awaiting Data" : `${glucose} mg/dL (${glucStatus})`
     },
     recommendations: recommendations.length > 0 ? recommendations : ["Maintain current medication schedule", "Log physical exercise metrics"],
     clinicalInsights
