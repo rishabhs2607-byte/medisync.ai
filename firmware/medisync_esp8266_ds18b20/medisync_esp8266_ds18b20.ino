@@ -1,8 +1,8 @@
 /*
  * MediSync IoT Thermometer Integration Firmware
- * Target Board: ESP8266 NodeMCU
+ * Target Board: ESP8266 NodeMCU / Wemos D1 Mini / Generic ESP8266
  * 
- * Hardware Connections:
+ * Hardware Connections (Label mapping):
  * 1. DS18B20 Temp Sensor: DATA -> Pin D4 (GPIO 2), VCC -> 3.3V, GND -> GND
  *    Note: Place a 4.7k Ohm resistor between DATA and VCC pins.
  * 2. SSD1306 OLED (I2C): SDA -> Pin D2 (GPIO 4), SCL -> Pin D1 (GPIO 5), VCC -> 3.3V, GND -> GND
@@ -31,12 +31,36 @@
 #include <addons/TokenHelper.h>
 #include <addons/RTDBHelper.h>
 
-// --- Pin Mappings ---
-#define DS18B20_PIN 2    // D4 (GPIO 2)
-#define BUTTON_PIN 0     // D3 (GPIO 0)
-#define BUZZER_PIN 14    // D5 (GPIO 14)
-#define OLED_SDA 4       // D2 (GPIO 4)
-#define OLED_SCL 5       // D1 (GPIO 5)
+// --- Pin Mappings (Auto-detect Wemos/NodeMCU Pin Labels, otherwise fallback to raw GPIO numbers) ---
+#ifdef D4
+  #define DS18B20_PIN D4
+#else
+  #define DS18B20_PIN 2    // GPIO 2
+#endif
+
+#ifdef D3
+  #define BUTTON_PIN D3
+#else
+  #define BUTTON_PIN 0     // GPIO 0
+#endif
+
+#ifdef D5
+  #define BUZZER_PIN D5
+#else
+  #define BUZZER_PIN 14    // GPIO 14
+#endif
+
+#ifdef D2
+  #define OLED_SDA D2
+#else
+  #define OLED_SDA 4       // GPIO 4
+#endif
+
+#ifdef D1
+  #define OLED_SCL D1
+#else
+  #define OLED_SCL 5       // GPIO 5
+#endif
 
 // --- OLED Configuration ---
 #define SCREEN_WIDTH 128
@@ -373,8 +397,19 @@ void setup() {
   renderScreen("BOOT", "Connecting Firebase", String(FIREBASE_DATABASE_URL), "");
   config.api_key = FIREBASE_API_KEY;
   config.database_url = FIREBASE_DATABASE_URL;
+  
+  /* Authenticate using Anonymous login (enable in Firebase console) */
   auth.user.email = "";
   auth.user.password = "";
+  
+  /* Alternative authentication methods:
+   * 1. Email/Password:
+   *    auth.user.email = "device@medisync.ai";
+   *    auth.user.password = "yourpassword";
+   * 
+   * 2. Database Secret (Legacy token):
+   *    config.signer.tokens.legacy_token = "your_database_secret";
+   */
   
   Firebase.begin(&config, &auth);
   Firebase.reconnectWiFi(true);
