@@ -312,11 +312,11 @@ export default function PatientDashboard() {
               <div className="bg-luxury-pureBlack border border-zinc-900 p-4 rounded-xl flex items-center justify-between">
                 <div>
                   <p className="text-[9px] text-zinc-500 uppercase tracking-widest font-mono">Body Temperature</p>
-                  <p className={`text-3xl font-black mt-1 ${currentTemp > 38.0 ? "text-luxury-redCrimson" : "text-white"}`}>
-                    {currentTemp}°C
+                  <p className={`text-3xl font-black mt-1 ${((currentTemp * 9/5) + 32) > 100.4 ? "text-luxury-redCrimson" : "text-white"}`}>
+                    {((currentTemp * 9/5) + 32).toFixed(1)}°F
                   </p>
                   <p className="text-[9px] text-zinc-400 mt-1 font-mono">
-                    {currentTemp > 38.0 ? "Fever Detected" : "Celsius"}
+                    {((currentTemp * 9/5) + 32) > 100.4 ? "Fever Detected" : "Normal"}
                   </p>
                 </div>
                 <div className={`p-2.5 rounded-xl border ${currentTemp > 38.0 ? "bg-luxury-redCrimson/10 border-luxury-redCrimson/25 text-luxury-redCrimson" : "bg-luxury-goldRoyal/10 border-luxury-goldRoyal/25 text-luxury-goldRoyal"}`}>
@@ -384,16 +384,14 @@ export default function PatientDashboard() {
             <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-luxury-goldRoyal/10 to-transparent blur-xl pointer-events-none" />
             
             <div className="flex items-center justify-between border-b border-zinc-900 pb-4 mb-6">
-              <h2 className="text-sm font-extrabold uppercase tracking-wider text-luxury-goldRoyal flex items-center gap-2">
+              <div className="flex items-center gap-2">
+                <span className={`w-2 h-2 rounded-full ${isDeviceOnline ? "bg-luxury-greenEmerald animate-pulse" : "bg-zinc-650"}`} />
+                <span className="text-[10px] text-zinc-400 font-mono uppercase">{isDeviceOnline ? "Online" : "Offline"}</span>
+              </div>
+              <h2 className="text-sm font-extrabold uppercase tracking-wider text-luxury-goldRoyal flex items-center gap-2 text-right">
                 <Thermometer className="text-luxury-goldRoyal animate-pulse" size={16} /> 
                 MediSync Thermometer (IoT)
               </h2>
-              <div className="flex items-center gap-2">
-                <span className={`w-2 h-2 rounded-full ${isDeviceOnline ? "bg-luxury-greenEmerald animate-pulse" : "bg-zinc-650"}`} />
-                <span className="text-[10px] text-zinc-400 font-mono uppercase">
-                  {isDeviceOnline ? "Online" : "Offline"}
-                </span>
-              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6">

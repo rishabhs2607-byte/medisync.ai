@@ -171,7 +171,7 @@ void renderScreen(String state, String line2 = "", String line3 = "", String lin
   }
   
   // Constant Footer: MediSync
-  display.setCursor(38, 56);
+  display.setCursor(76, 56);
   display.setTextSize(1);
   display.println("MediSync");
   display.drawLine(0, 54, 127, 54, SSD1306_WHITE);
@@ -192,7 +192,7 @@ void showLogo() {
   display.setCursor(32, 34);
   display.println("Thermometer");
   
-  display.setCursor(20, 48);
+  display.setCursor(18, 48);
   display.println("IoT Health Module");
   display.display();
   delay(2000);
@@ -200,12 +200,12 @@ void showLogo() {
 
 // --- Filtering Logic ---
 float getFilteredTemp() {
-  float samples[20];
+  float samples[10];
   int validSamplesCount = 0;
 
-  renderScreen("MEASURING", "Taking 20 samples...", "Reading DS18B20", "");
+  renderScreen("MEASURING", "Taking 10 samples...", "Reading DS18B20", "");
 
-  for (int i = 0; i < 20; i++) {
+  for (int i = 0; i < 10; i++) {
     sensors.requestTemperatures();
     float rawTemp = sensors.getTempCByIndex(0);
 
@@ -220,7 +220,7 @@ float getFilteredTemp() {
     for (int j = 0; j <= i; j++) {
       if (j % 5 == 0) progress += ".";
     }
-    renderScreen("MEASURING", "Reading DS18B20", "Samples: " + String(validSamplesCount) + "/20", progress);
+    renderScreen("MEASURING", "Reading DS18B20", "Samples: " + String(validSamplesCount) + "/10", progress);
     delay(50); // 50ms sample separation
   }
 
@@ -312,7 +312,7 @@ void performMeasurementAndUpload() {
   float finalTemp = getFilteredTemp();
 
   if (finalTemp == DEVICE_DISCONNECTED_C) {
-    renderScreen("ERROR", "Sensor disconnected", "Check Pin D4", "");
+    renderScreen("ERROR", "Sensor disconnected", "Check", "");
     return;
   }
 
@@ -320,30 +320,32 @@ void performMeasurementAndUpload() {
   soundMeasurementSuccess();
 
   // Evaluate temperature and trigger alert beeps
+  float fahrenheitTemp = (finalTemp * 9.0/5.0) + 32.0;
   String statusMessage = "Normal";
-  if (finalTemp > 39.0) {
+  if (fahrenheitTemp > 100.4) {
     statusMessage = "High Fever!";
-    renderScreen("RESULT", "Body Temp:", String(finalTemp, 1) + " C", statusMessage);
+    renderScreen("RESULT", "Body Temp:", String(fahrenheitTemp, 1) + " °F", statusMessage);
     soundHighFeverWarning();
-  } else if (finalTemp > 38.0) {
+  } else if (fahrenheitTemp > 99.5) {
     statusMessage = "Fever Alert!";
-    renderScreen("RESULT", "Body Temp:", String(finalTemp, 1) + " C", statusMessage);
+    renderScreen("RESULT", "Body Temp:", String(fahrenheitTemp, 1) + " °F", statusMessage);
     soundFeverAlert();
   } else {
-    renderScreen("RESULT", "Body Temp:", String(finalTemp, 1) + " C", "Normal Range");
+    renderScreen("RESULT", "Body Temp:", String(fahrenheitTemp, 1) + " °F", "Normal Range");
     delay(1000);
   }
 
   // Upload to Firebase if connected
   if (WiFi.status() == WL_CONNECTED && Firebase.ready()) {
-    renderScreen("UPLOADING", "Sending to Cloud...", String(finalTemp, 1) + " C", "Firebase RTDB");
+    renderScreen("UPLOADING", "Sending to Cloud...", String(fahrenheitTemp, 1) + " °F", "Firebase RTDB");
     
     time_t now = time(nullptr);
     uint64_t timestamp_ms = (uint64_t)now * 1000;
     int rssi = WiFi.RSSI();
 
     FirebaseJson json;
-    json.set("temperature", finalTemp);
+    float fahrenheitTemp = (finalTemp * 9.0/5.0) + 32.0;
+  json.set("temperature", fahrenheitTemp);
     json.set("timestamp", timestamp_ms);
     json.set("rssi", rssi);
     json.set("status", "online");
@@ -415,7 +417,7 @@ void setup() {
   Firebase.reconnectWiFi(true);
 
   soundReadyToMeasure();
-  renderScreen("READY", "System Operational", "Press D3 Button", "To Start Measure");
+  renderScreen("READY", "System Operational", "Press", "Start Measure");
 }
 
 void loop() {
@@ -427,7 +429,7 @@ void loop() {
       performMeasurementAndUpload();
       // Reset auto timer so we don't upload immediately after a manual press
       lastTelemetryTime = millis();
-      renderScreen("READY", "System Operational", "Press D3 Button", "To Start Measure");
+      renderScreen("READY", "System Operational", "Press", "Start Measure");
     }
   }
 
@@ -437,6 +439,6 @@ void loop() {
     
     // Automatically perform measurement and sync
     performMeasurementAndUpload();
-    renderScreen("READY", "System Operational", "Press D3 Button", "To Start Measure");
+    renderScreen("READY", "System Operational", "Press", "Start Measure");
   }
 }
