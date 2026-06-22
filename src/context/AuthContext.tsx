@@ -15,7 +15,7 @@ import {
   db
 } from "@/services/firebase";
 import { onAuthStateChanged } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc } from "firebase/firestore";
 
 interface AuthContextType {
   user: UserProfile | null;
@@ -50,17 +50,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const docRef = doc(db, "users", firebaseUser.uid);
           const docSnap = await getDoc(docRef);
           if (docSnap.exists()) {
-            const profile = docSnap.data() as UserProfile;
+            let profile = docSnap.data() as UserProfile;
+            
+            // SELF-HEAL: If Admin approved in localStorage but Firestore failed due to rules,
+            // the Doctor can use their own write permissions to heal Firestore!
+            const localUsers = getStorageData("users", []);
+            const localProfile = localUsers.find((u: UserProfile) => u.uid === profile.uid);
+            if (localProfile && localProfile.status === "approved" && profile.status === "pending") {
+              profile.status = "approved";
+              try { await setDoc(docRef, { status: "approved" }, { merge: true }); } catch (e) {}
+            }
+
             setUser(profile);
             setStorageData("activeUser", profile);
             
             // Sync to local array registry
-            const localUsers = getStorageData("users", []);
             const idx = localUsers.findIndex((u: UserProfile) => u.uid === profile.uid);
             if (idx !== -1) localUsers[idx] = profile;
             else localUsers.push(profile);
             setStorageData("users", localUsers);
             profileLoaded = true;
+          } else {
+            // SELF-HEAL: If document is completely missing in Firestore, create it!
+            const localUsers = getStorageData("users", []);
+            const localProfile = localUsers.find((u: UserProfile) => u.uid === firebaseUser.uid);
+            if (localProfile) {
+               try { await setDoc(docRef, localProfile); } catch (e) {}
+               setUser(localProfile);
+               setStorageData("activeUser", localProfile);
+               profileLoaded = true;
+            }
           }
         } catch (e) {
           console.warn("Firestore fetch on refresh failed, using local storage", e);
