@@ -11,9 +11,11 @@ import {
   forgotPassword as forgotPasswordApi,
   updateUserProfile,
   getStorageData, 
-  setStorageData 
+  setStorageData,
+  db
 } from "@/services/firebase";
 import { onAuthStateChanged } from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
 
 interface AuthContextType {
   user: UserProfile | null;
@@ -42,11 +44,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // 2. Listen to Firebase auth changes
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
-        // Fetch or reconstruct profile
-        const dbUser = getStorageData("users", []).find((u: UserProfile) => u.uid === firebaseUser.uid || u.email === firebaseUser.email);
-        if (dbUser) {
-          setUser(dbUser);
-          setStorageData("activeUser", dbUser);
+        let profileLoaded = false;
+        // Try fetching fresh profile from Firestore to catch Admin status approvals
+        try {
+          const docRef = doc(db, "users", firebaseUser.uid);
+          const docSnap = await getDoc(docRef);
+          if (docSnap.exists()) {
+            const profile = docSnap.data() as UserProfile;
+            setUser(profile);
+            setStorageData("activeUser", profile);
+            
+            // Sync to local array registry
+            const localUsers = getStorageData("users", []);
+            const idx = localUsers.findIndex((u: UserProfile) => u.uid === profile.uid);
+            if (idx !== -1) localUsers[idx] = profile;
+            else localUsers.push(profile);
+            setStorageData("users", localUsers);
+            profileLoaded = true;
+          }
+        } catch (e) {
+          console.warn("Firestore fetch on refresh failed, using local storage", e);
+        }
+
+        // Fallback to local storage if Firestore fails
+        if (!profileLoaded) {
+          const dbUser = getStorageData("users", []).find((u: UserProfile) => u.uid === firebaseUser.uid || u.email === firebaseUser.email);
+          if (dbUser) {
+            setUser(dbUser);
+            setStorageData("activeUser", dbUser);
+          }
         }
       } else {
         // If not logged in in Firebase, and also no manual session

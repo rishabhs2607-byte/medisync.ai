@@ -429,7 +429,7 @@ void loop() {
       performMeasurementAndUpload();
       // Reset auto timer so we don't upload immediately after a manual press
       lastTelemetryTime = millis();
-      renderScreen("READY", "System Operational", "Press", "Start Measure");
+      renderScreen("READY", "System Operational", "Press", "Start");
     }
   }
 
