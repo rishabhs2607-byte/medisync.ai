@@ -25,7 +25,7 @@ export default function AICenter() {
   // Vitals inputs for risk analysis
   const [heartRate, setHeartRate] = useState(72);
   const [spo2, setSpo2] = useState(98);
-  const [temp, setTemp] = useState(36.6);
+  const [temp, setTemp] = useState(98.6);
   const [systolic, setSystolic] = useState(120);
   const [diastolic, setDiastolic] = useState(80);
   const [glucose, setGlucose] = useState(104);
@@ -194,9 +194,9 @@ export default function AICenter() {
               </div>
 
               <div>
-                <label className="text-[9px] text-zinc-500 flex justify-between uppercase font-mono">Temperature: <span className="text-white font-bold">{temp.toFixed(1)}°C</span></label>
+                <label className="text-[9px] text-zinc-500 flex justify-between uppercase font-mono">Temperature: <span className="text-white font-bold">{temp.toFixed(1)}°F</span></label>
                 <input 
-                  type="range" min="34" max="41" step="0.1" value={temp} onChange={(e) => setTemp(parseFloat(e.target.value))}
+                  type="range" min="93" max="106" step="0.1" value={temp} onChange={(e) => setTemp(parseFloat(e.target.value))}
                   className="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-luxury-goldRoyal mt-1"
                 />
               </div>

@@ -199,8 +199,8 @@ export default function LandingPage() {
               <div className="glass-panel p-4 rounded-xl border border-white/5 bg-luxury-richBlack/60">
                 <p className="text-[10px] text-zinc-500 font-mono">TEMPERATURE</p>
                 <div className="flex items-baseline gap-2 mt-2">
-                  <span className="text-3xl font-extrabold text-luxury-goldRoyal">36.7</span>
-                  <span className="text-xs text-zinc-400">°C</span>
+                  <span className="text-3xl font-extrabold text-luxury-goldRoyal">98.1</span>
+                  <span className="text-xs text-zinc-400">°F</span>
                 </div>
               </div>
             </div>

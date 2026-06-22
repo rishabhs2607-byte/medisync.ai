@@ -312,14 +312,14 @@ export default function PatientDashboard() {
               <div className="bg-luxury-pureBlack border border-zinc-900 p-4 rounded-xl flex items-center justify-between">
                 <div>
                   <p className="text-[9px] text-zinc-500 uppercase tracking-widest font-mono">Body Temperature</p>
-                  <p className={`text-3xl font-black mt-1 ${((currentTemp * 9/5) + 32) > 100.4 ? "text-luxury-redCrimson" : "text-white"}`}>
-                    {((currentTemp * 9/5) + 32).toFixed(1)}°F
+                  <p className={`text-3xl font-black mt-1 ${currentTemp > 100.4 ? "text-luxury-redCrimson" : "text-white"}`}>
+                    {currentTemp.toFixed(1)}°F
                   </p>
                   <p className="text-[9px] text-zinc-400 mt-1 font-mono">
-                    {((currentTemp * 9/5) + 32) > 100.4 ? "Fever Detected" : "Normal"}
+                    {currentTemp > 100.4 ? "Fever Detected" : "Normal"}
                   </p>
                 </div>
-                <div className={`p-2.5 rounded-xl border ${currentTemp > 38.0 ? "bg-luxury-redCrimson/10 border-luxury-redCrimson/25 text-luxury-redCrimson" : "bg-luxury-goldRoyal/10 border-luxury-goldRoyal/25 text-luxury-goldRoyal"}`}>
+                <div className={`p-2.5 rounded-xl border ${currentTemp > 100.4 ? "bg-luxury-redCrimson/10 border-luxury-redCrimson/25 text-luxury-redCrimson" : "bg-luxury-goldRoyal/10 border-luxury-goldRoyal/25 text-luxury-goldRoyal"}`}>
                   <Thermometer size={18} />
                 </div>
               </div>
@@ -397,24 +397,24 @@ export default function PatientDashboard() {
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
               {/* Live Temperature & Fever Alert */}
               <div className="bg-luxury-pureBlack border border-zinc-900 p-4 rounded-xl flex flex-col justify-between relative overflow-hidden">
-                {liveTemp !== null && isDeviceOnline && liveTemp > 38.0 && (
+                {liveTemp !== null && isDeviceOnline && liveTemp > 100.4 && (
                   <div className="absolute top-0 left-0 right-0 h-1 bg-luxury-redCrimson animate-pulse" />
                 )}
                 <div>
                   <p className="text-[9px] text-zinc-500 uppercase tracking-widest font-mono">Live Temperature</p>
                   <div className="flex items-baseline gap-2 mt-1">
-                    <p className={`text-4xl font-black ${liveTemp !== null && isDeviceOnline && liveTemp > 38.0 ? "text-luxury-redCrimson" : "text-white"}`}>
+                    <p className={`text-4xl font-black ${liveTemp !== null && isDeviceOnline && liveTemp > 100.4 ? "text-luxury-redCrimson" : "text-white"}`}>
                       {liveTemp !== null && isDeviceOnline ? `${liveTemp.toFixed(1)}` : "--.-"}
                     </p>
-                    <span className="text-xs text-zinc-400 font-bold font-mono">°C</span>
+                    <span className="text-xs text-zinc-400 font-bold font-mono">°F</span>
                   </div>
                 </div>
                 
                 <div className="mt-4">
                   {liveTemp !== null && isDeviceOnline ? (
-                    liveTemp > 38.0 ? (
+                    liveTemp > 100.4 ? (
                       <div className="flex items-center gap-1.5 text-[9px] text-luxury-redCrimson font-bold uppercase font-mono bg-luxury-redCrimson/10 border border-luxury-redCrimson/20 px-2 py-1 rounded">
-                        <AlertTriangle size={10} /> Fever Alert (&gt;38°C)
+                        <AlertTriangle size={10} /> Fever Alert (&gt;100.4°F)
                       </div>
                     ) : (
                       <div className="flex items-center gap-1.5 text-[9px] text-luxury-greenEmerald font-bold uppercase font-mono bg-luxury-greenEmerald/10 border border-luxury-greenEmerald/20 px-2 py-1 rounded">
@@ -493,8 +493,8 @@ export default function PatientDashboard() {
                   </div>
                 </div>
                 <div className="flex justify-between items-center text-[8px] text-zinc-500 font-mono border-t border-zinc-900 pt-1.5">
-                  <span>34°C</span>
-                  <span>42°C</span>
+                  <span>93°F</span>
+                  <span>108°F</span>
                 </div>
               </div>
             </div>

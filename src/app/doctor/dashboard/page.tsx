@@ -311,7 +311,7 @@ export default function DoctorDashboard() {
 
               <div className="glass-panel p-4 rounded-xl border border-white/5 bg-luxury-pureBlack/60 text-center">
                 <p className="text-[9px] text-zinc-500 font-mono uppercase tracking-wider">TEMPERATURE</p>
-                <p className="text-xl font-extrabold text-luxury-goldRoyal mt-2 font-mono">{selectedPatient.vitals.temperature}°C</p>
+                <p className="text-xl font-extrabold text-luxury-goldRoyal mt-2 font-mono">{selectedPatient.vitals.temperature}°F</p>
               </div>
 
               <div className="glass-panel p-4 rounded-xl border border-white/5 bg-luxury-pureBlack/60 text-center">

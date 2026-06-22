@@ -192,7 +192,7 @@ void showLogo() {
   display.setCursor(32, 34);
   display.println("Thermometer");
   
-  display.setCursor(18, 48);
+  display.setCursor(14, 48);
   display.println("IoT Health Module");
   display.display();
   delay(2000);

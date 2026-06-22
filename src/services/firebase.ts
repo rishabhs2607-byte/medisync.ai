@@ -304,7 +304,7 @@ export const registerUserWithFirebase = async (
           vitals: {
             heartRate: 72,
             spo2: 98,
-            temperature: 36.6,
+            temperature: 97.9,
             systolic: 120,
             diastolic: 80,
             glucose: 95,
@@ -360,7 +360,7 @@ export const registerUserWithFirebase = async (
         vitals: {
           heartRate: 72,
           spo2: 98,
-          temperature: 36.6,
+          temperature: 97.9,
           systolic: 120,
           diastolic: 80,
           glucose: 95,
@@ -430,7 +430,7 @@ export const registerUserWithFirebase = async (
         medications: [],
         history: [],
         vitalsMode: "manual",
-        vitals: { heartRate: 72, spo2: 98, temperature: 36.5, systolic: 120, diastolic: 80, glucose: 90, fallDetected: false, ecg: [], lastUpdated: new Date().toISOString() },
+        vitals: { heartRate: 72, spo2: 98, temperature: 97.7, systolic: 120, diastolic: 80, glucose: 90, fallDetected: false, ecg: [], lastUpdated: new Date().toISOString() },
         connectedDevice: null,
         familyMembers: [],
         reports: []
@@ -558,7 +558,7 @@ export const loginWithGoogle = async (): Promise<UserProfile> => {
         vitals: {
           heartRate: 72,
           spo2: 98,
-          temperature: 36.6,
+          temperature: 97.9,
           systolic: 120,
           diastolic: 80,
           glucose: 95,

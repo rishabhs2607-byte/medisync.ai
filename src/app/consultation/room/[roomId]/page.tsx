@@ -420,7 +420,7 @@ export default function ConsultationRoom() {
               {[
                 { label: "HR", value: `${vitals.heartRate} bpm`, color: "text-luxury-redCrimson", icon: <Heart size={10} /> },
                 { label: "SpO₂", value: `${vitals.spo2}%`, color: "text-luxury-blueElectric", icon: <Activity size={10} /> },
-                { label: "TEMP", value: `${vitals.temperature}°C`, color: "text-luxury-goldRoyal", icon: <Thermometer size={10} /> },
+                { label: "TEMP", value: `${vitals.temperature}°F`, color: "text-luxury-goldRoyal", icon: <Thermometer size={10} /> },
                 { label: "BP", value: `${vitals.systolic}/${vitals.diastolic}`, color: "text-luxury-greenEmerald", icon: <Droplet size={10} /> },
               ].map((v) => (
                 <div key={v.label} className="bg-zinc-950/90 border border-zinc-900 rounded-xl p-2.5 text-center">

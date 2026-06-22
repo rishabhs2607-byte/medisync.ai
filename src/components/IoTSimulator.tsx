@@ -12,7 +12,7 @@ export default function IoTSimulator() {
   // State for Device Mode (simulation sliders)
   const [heartRate, setHeartRate] = useState(72);
   const [spo2, setSpo2] = useState(98);
-  const [temp, setTemp] = useState(36.6);
+  const [temp, setTemp] = useState(98.6);
   const [systolic, setSystolic] = useState(120);
   const [diastolic, setDiastolic] = useState(80);
   const [glucose, setGlucose] = useState(104);
@@ -99,7 +99,7 @@ export default function IoTSimulator() {
     let newAlert = null;
     if (ox < 90) newAlert = { metric: "SpO2" as const, value: `${ox}%`, severity: "critical" as const };
     else if (hr > 130 || hr < 45) newAlert = { metric: "Heart Rate" as const, value: `${hr} bpm`, severity: "critical" as const };
-    else if (t > 39.0) newAlert = { metric: "Temperature" as const, value: `${t.toFixed(1)}°C`, severity: "critical" as const };
+    else if (t > 100.4) newAlert = { metric: "Temperature" as const, value: `${t.toFixed(1)}°F`, severity: "critical" as const };
     else if (fall) newAlert = { metric: "Fall" as const, value: "Immediate Fall Event", severity: "critical" as const };
     else if (ecg) newAlert = { metric: "ECG" as const, value: "Abnormal Rhythms Detected", severity: "warning" as const };
 
@@ -244,10 +244,10 @@ export default function IoTSimulator() {
               <div>
                 <label className="text-[10px] text-zinc-400 flex justify-between mb-1">
                   <span><Thermometer size={12} className="inline mr-1 text-luxury-goldRoyal" /> Body Temperature</span>
-                  <span className="font-mono text-white font-semibold">{temp.toFixed(1)}°C</span>
+                  <span className="font-mono text-white font-semibold">{temp.toFixed(1)}°F</span>
                 </label>
                 <input
-                  type="range" min="34" max="41" step="0.1" value={temp}
+                  type="range" min="93" max="106" step="0.1" value={temp}
                   onChange={(e) => setTemp(parseFloat(e.target.value))}
                   className="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-luxury-goldRoyal"
                 />
@@ -330,7 +330,7 @@ export default function IoTSimulator() {
             </div>
 
             <div>
-              <label className="block text-[10px] text-zinc-400 mb-1">Temperature (°C)</label>
+              <label className="block text-[10px] text-zinc-400 mb-1">Temperature (°F)</label>
               <input
                 type="number" step="0.1" value={manTemp} onChange={(e) => setManTemp(e.target.value)}
                 className="w-full bg-zinc-900 border border-zinc-800 text-xs px-3 py-2 rounded-lg text-center focus:outline-none focus:border-luxury-goldRoyal"

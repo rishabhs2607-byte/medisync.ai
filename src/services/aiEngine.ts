@@ -73,15 +73,15 @@ export const analyzeVitals = (
 
   // Temperature Analysis
   let tempStatus = "Normal";
-  if (temp > 39.0) {
+  if (temp > 102.2) {
     tempStatus = "Hyperpyrexia (High Fever)";
     scorePoints -= 15;
     recommendations.push("Administer antipyretics (acetaminophen/ibuprofen) as prescribed. Hydrate.");
-  } else if (temp > 37.5) {
+  } else if (temp > 99.5) {
     tempStatus = "Low Grade Fever";
     scorePoints -= 5;
     recommendations.push("Monitor temperature hourly. Dress in light layers.");
-  } else if (temp < 35.0) {
+  } else if (temp < 95.0) {
     tempStatus = "Hypothermia";
     scorePoints -= 15;
     recommendations.push("Apply external warming blankets. Warm oral fluids if patient is conscious.");
@@ -141,7 +141,7 @@ export const analyzeVitals = (
     vitalsStatus: {
       heartRate: hrStatus,
       spo2: spo2Status,
-      temperature: `${temp.toFixed(1)}°C (${tempStatus})`,
+      temperature: `${temp.toFixed(1)}°F (${tempStatus})`,
       bloodPressure: `${systolic}/${diastolic} mmHg (${bpStatus})`,
       glucose: `${glucose} mg/dL (${glucStatus})`
     },
