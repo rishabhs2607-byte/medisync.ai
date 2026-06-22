@@ -75,7 +75,7 @@ DallasTemperature sensors(&oneWire);
 
 // --- Firebase Configuration ---
 #define FIREBASE_API_KEY "AIzaSyBsedBBMCahJXiNShwNICk7UxUJwY4229A"
-#define FIREBASE_DATABASE_URL "https://medisync-2b25a-default-rtdb.firebaseio.com"
+#define FIREBASE_DATABASE_URL "medisync-2b25a-default-rtdb.firebaseio.com" // DO NOT INCLUDE https://
 #define DEVICE_ID "thermometer_01" // Matches listener on the dashboard
 
 FirebaseData fbdo;
