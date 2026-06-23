@@ -58,6 +58,13 @@ export default function PatientDashboard() {
   const [isDeviceOnline, setIsDeviceOnline] = useState<boolean>(false);
   const [lastUpdatedText, setLastUpdatedText] = useState<string>("Never");
 
+  // IoT Oximeter states
+  const [liveSpO2, setLiveSpO2] = useState<number | null>(null);
+  const [liveHR, setLiveHR] = useState<number | null>(null);
+  const [liveOxiTimestamp, setLiveOxiTimestamp] = useState<number | null>(null);
+  const [isOxiOnline, setIsOxiOnline] = useState<boolean>(false);
+  const [lastOxiUpdatedText, setLastOxiUpdatedText] = useState<string>("Never");
+
   const [firestorePrescriptions, setFirestorePrescriptions] = useState<any[]>([]);
 
   // Subscribe to Firestore prescriptions in real-time
@@ -103,6 +110,41 @@ export default function PatientDashboard() {
             p.connectedDevice = { deviceId, status: "online", battery: 98, lastSync: new Date(tsVal).toISOString() };
           }
           saveMediSyncDb(dbInstance);
+          loadDb();
+          // Push vitals to Firestore so doctor can see live device data
+          writePatientVitalsToFirestore(patientId, p.name, p.vitals);
+        }
+      }
+    });
+    return () => unsubscribe();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [patientId]);
+
+  // Firebase RTDB listener for IoT oximeter
+  useEffect(() => {
+    if (!rtdb) return;
+    const deviceId = "oximeter_01";
+    const telemetryRef = ref(rtdb, `device_telemetry/${deviceId}`);
+    const unsubscribe = onValue(telemetryRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data && (typeof data.spo2 === "number" || typeof data.heartRate === "number")) {
+        const spo2Val = typeof data.spo2 === "number" ? data.spo2 : null;
+        const hrVal = typeof data.heartRate === "number" ? data.heartRate : null;
+        const tsVal = Date.now();
+        
+        if (spo2Val !== null) setLiveSpO2(spo2Val);
+        if (hrVal !== null) setLiveHR(hrVal);
+        setLiveOxiTimestamp(tsVal);
+        
+        // Sync to local DB
+        const dbInstance = getMediSyncDb();
+        const p = dbInstance.patients.find(x => x.uid === patientId);
+        if (p) {
+          if (spo2Val !== null) p.vitals.spo2 = spo2Val;
+          if (hrVal !== null) p.vitals.heartRate = hrVal;
+          p.vitals.lastUpdated = new Date(tsVal).toISOString();
+          saveMediSyncDb(dbInstance);
+          loadDb();
           // Push vitals to Firestore so doctor can see live device data
           writePatientVitalsToFirestore(patientId, p.name, p.vitals);
         }
@@ -132,6 +174,27 @@ export default function PatientDashboard() {
     }, 1000);
     return () => clearInterval(timer);
   }, [liveTimestamp]);
+
+  // Oximeter online check
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (liveOxiTimestamp) {
+        const diffMs = Date.now() - liveOxiTimestamp;
+        const diffSec = Math.floor(diffMs / 1000);
+        setIsOxiOnline(diffSec <= 30);
+        if (diffSec < 5) setLastOxiUpdatedText("Just now");
+        else if (diffSec < 60) setLastOxiUpdatedText(`${diffSec} seconds ago`);
+        else {
+          const diffMin = Math.floor(diffSec / 60);
+          setLastOxiUpdatedText(`${diffMin} minute${diffMin > 1 ? "s" : ""} ago`);
+        }
+      } else {
+        setIsOxiOnline(false);
+        setLastOxiUpdatedText("Never");
+      }
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [liveOxiTimestamp]);
 
   const loadDb = useCallback(() => {
     setDb(getMediSyncDb());
@@ -448,20 +511,31 @@ export default function PatientDashboard() {
                   </div>
                 </div>
 
-                {/* Device */}
-                <div className="bg-luxury-pureBlack border border-zinc-900 p-4 rounded-xl flex flex-col justify-between">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-mono">IoT Sync</span>
-                    {isDeviceOnline
-                      ? <Wifi size={14} className="text-luxury-greenEmerald" />
-                      : <WifiOff size={14} className="text-zinc-600" />}
+                {/* Devices */}
+                <div className="bg-luxury-pureBlack border border-zinc-900 p-4 rounded-xl flex flex-col justify-between space-y-2">
+                  <div className="flex justify-between items-center border-b border-zinc-900 pb-1.5">
+                    <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-mono">IoT Devices Monitor</span>
+                    <Cpu size={12} className="text-luxury-goldRoyal" />
                   </div>
-                  <p className="text-xs font-bold text-white mt-1 font-mono">{patient.connectedDevice?.deviceId || "Not Connected"}</p>
-                  <div className="flex justify-between items-center text-[9px] text-zinc-400 font-mono">
-                    <span className={isDeviceOnline ? "text-luxury-greenEmerald" : "text-zinc-600"}>
-                      {isDeviceOnline ? "Online" : "Offline"}
-                    </span>
-                    <span>{lastUpdatedText}</span>
+                  {/* Thermometer */}
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-[10px] text-zinc-400 font-mono">Temp Sensor:</span>
+                    <div className="flex items-center gap-1.5">
+                      <span className={`w-1.5 h-1.5 rounded-full ${isDeviceOnline ? "bg-luxury-greenEmerald animate-pulse" : "bg-zinc-700"}`} />
+                      <span className={`text-[9px] font-mono ${isDeviceOnline ? "text-luxury-greenEmerald" : "text-zinc-500"}`}>
+                        {isDeviceOnline ? "Online" : "Offline"}
+                      </span>
+                    </div>
+                  </div>
+                  {/* Oximeter */}
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-[10px] text-zinc-400 font-mono">Oximeter (SpO2):</span>
+                    <div className="flex items-center gap-1.5">
+                      <span className={`w-1.5 h-1.5 rounded-full ${isOxiOnline ? "bg-luxury-greenEmerald animate-pulse" : "bg-zinc-700"}`} />
+                      <span className={`text-[9px] font-mono ${isOxiOnline ? "text-luxury-greenEmerald" : "text-zinc-500"}`}>
+                        {isOxiOnline ? "Online" : "Offline"}
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
