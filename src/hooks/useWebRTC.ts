@@ -145,11 +145,22 @@ export function useWebRTC(): UseWebRTCReturn {
     pc.ontrack = (event) => {
       event.streams[0]?.getTracks().forEach((track) => remote.addTrack(track));
       setRemoteStream(remote);
+      // Guarantee UI unlocks when video actually arrives
+      setCallStatus("connected");
     };
 
     pc.onconnectionstatechange = () => {
       if (pc.connectionState === "connected") setCallStatus("connected");
       if (pc.connectionState === "disconnected" || pc.connectionState === "failed") {
+        setCallStatus("ended");
+      }
+    };
+
+    pc.oniceconnectionstatechange = () => {
+      if (pc.iceConnectionState === "connected" || pc.iceConnectionState === "completed") {
+        setCallStatus("connected");
+      }
+      if (pc.iceConnectionState === "disconnected" || pc.iceConnectionState === "failed") {
         setCallStatus("ended");
       }
     };

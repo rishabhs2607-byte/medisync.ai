@@ -139,22 +139,15 @@ export default function ConsultationRoom() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId, user, role]);
 
-  // ─── Subscribe to Firestore real-time chat ────────────────────────────────
+  // ─── Subscribe to patient vitals for doctor after room data is available ────────────────────────
   useEffect(() => {
-    if (!roomId) return;
-    const msgsRef = collection(firestoreDb, "rooms", roomId, "messages");
-    const q = query(msgsRef, orderBy("timestamp", "asc"));
-
-    const unsub = onSnapshot(q, (snap) => {
-      const msgs: LiveMessage[] = snap.docs.map((d) => ({
-        id: d.id,
-        ...(d.data() as Omit<LiveMessage, "id">),
-      }));
-      setMessages(msgs);
-    });
-
-    return () => unsub();
-  }, [roomId]);
+    if (role === "doctor" && roomData?.patientId) {
+      const unsub = subscribeToPatientVitals(roomData.patientId, (v, _name) => {
+        if (v) setVitals(v);
+      });
+      return () => unsub();
+    }
+  }, [role, roomData?.patientId]);
 
   // ─── Auto-scroll chat ─────────────────────────────────────────────────────
   useEffect(() => {
