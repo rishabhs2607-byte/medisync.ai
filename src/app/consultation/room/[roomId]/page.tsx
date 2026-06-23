@@ -6,11 +6,14 @@ import { useAuth } from "@/context/AuthContext";
 import { useWebRTC } from "@/hooks/useWebRTC";
 import {
   db as firestoreDb,
+  rtdb,
   getMediSyncDb,
   saveMediSyncDb,
   Prescription,
   subscribeToPatientVitals,
+  writePatientVitalsToFirestore,
 } from "@/services/firebase";
+import { ref, onValue } from "firebase/database";
 import {
   collection,
   addDoc,
@@ -59,7 +62,7 @@ export default function ConsultationRoom() {
   const {
     localStream, remoteStream, callStatus, error,
     isMicOn, isCamOn, isScreenSharing,
-    joinCall, endCall, toggleMic, toggleCam, toggleScreenShare,
+    startCall, joinCall, endCall, toggleMic, toggleCam, toggleScreenShare,
   } = useWebRTC();
 
   const localVideoRef = useRef<HTMLVideoElement>(null);
@@ -117,37 +120,55 @@ export default function ConsultationRoom() {
       // Doctor joins existing room
       joinCall(roomId, user.uid, user.name).catch(console.error);
     } else if (role === "patient" && user) {
-      // Patient already created the room before navigating here — just initialize media
-      // The room was created by startCall() in patient dashboard — we only need getUserMedia
-      // If this is a fresh load (e.g. page refresh), rejoin as patient by creating new offer only if needed
-      // For now just request media so local stream is visible
+      // Patient starts call / re-initiates the connection for the room
+      startCall(user.uid, user.name, roomId).catch(console.error);
     }
-
-    // Load vitals — for doctor: subscribe to Firestore patient_vitals
-    if (role === "doctor" && roomData?.patientId) {
-      const unsub = subscribeToPatientVitals(roomData.patientId, (v, _name) => {
-        if (v) setVitals(v);
-      });
-      return () => { unsubRoom(); unsub(); };
-    }
-
-    // Patient: load local vitals
-    const localDb = getMediSyncDb();
-    if (localDb.patients.length > 0) setVitals(localDb.patients[0].vitals);
 
     return () => unsubRoom();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId, user, role]);
 
-  // ─── Subscribe to patient vitals for doctor after room data is available ────────────────────────
+  // ─── Subscribe to patient vitals from Firestore for both Doctor and Patient ────────────────────────
   useEffect(() => {
-    if (role === "doctor" && roomData?.patientId) {
-      const unsub = subscribeToPatientVitals(roomData.patientId, (v, _name) => {
+    const targetPatientId = role === "doctor" ? roomData?.patientId : user?.uid;
+    if (targetPatientId) {
+      const unsub = subscribeToPatientVitals(targetPatientId, (v, _name) => {
         if (v) setVitals(v);
       });
       return () => unsub();
     }
-  }, [role, roomData?.patientId]);
+  }, [role, roomData?.patientId, user?.uid]);
+
+  // ─── Firebase RTDB listener for IoT thermometer (Patient side only) ────────────────────────
+  useEffect(() => {
+    if (role !== "patient" || !user || !rtdb) return;
+
+    const deviceId = "thermometer_01";
+    const telemetryRef = ref(rtdb, `device_telemetry/${deviceId}`);
+    const unsubscribe = onValue(telemetryRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data && typeof data.temperature === "number") {
+        const tempVal = data.temperature;
+        const tsVal = Date.now();
+
+        // Sync to local DB
+        const dbInstance = getMediSyncDb();
+        const p = dbInstance.patients.find((x) => x.uid === user.uid);
+        if (p) {
+          p.vitals.temperature = parseFloat(tempVal.toFixed(1));
+          p.vitals.lastUpdated = new Date(tsVal).toISOString();
+          saveMediSyncDb(dbInstance);
+
+          const updatedVitals = { ...p.vitals };
+          setVitals(updatedVitals);
+
+          // Push vitals to Firestore so doctor can see live device data
+          writePatientVitalsToFirestore(user.uid, p.name, updatedVitals);
+        }
+      }
+    });
+    return () => unsubscribe();
+  }, [role, user, roomId]);
 
   // ─── Auto-scroll chat ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -421,20 +442,20 @@ export default function ConsultationRoom() {
             </div>
           </div>
 
-          {/* Doctor: Live vitals mini-panel during call */}
-          {role === "doctor" && vitals && isConnected && (
+          {/* Live vitals panel during call (both Patient and Doctor) */}
+          {vitals && (
             <div className="grid grid-cols-4 gap-2 shrink-0">
               {[
-                { label: "HR", value: `${vitals.heartRate} bpm`, color: "text-luxury-redCrimson", icon: <Heart size={10} /> },
-                { label: "SpO₂", value: `${vitals.spo2}%`, color: "text-luxury-blueElectric", icon: <Activity size={10} /> },
-                { label: "TEMP", value: `${vitals.temperature}°F`, color: "text-luxury-goldRoyal", icon: <Thermometer size={10} /> },
-                { label: "BP", value: `${vitals.systolic}/${vitals.diastolic}`, color: "text-luxury-greenEmerald", icon: <Droplet size={10} /> },
+                { label: "Heart Rate", value: vitals.heartRate ? `${vitals.heartRate} bpm` : "--", color: "text-luxury-redCrimson", icon: <Heart size={11} /> },
+                { label: "Oxygen (SpO₂)", value: vitals.spo2 ? `${vitals.spo2}%` : "--", color: "text-luxury-blueElectric", icon: <Activity size={11} /> },
+                { label: "Temperature", value: vitals.temperature ? `${vitals.temperature}°F` : "--", color: "text-luxury-goldRoyal", icon: <Thermometer size={11} /> },
+                { label: "Blood Pressure", value: (vitals.systolic && vitals.diastolic) ? `${vitals.systolic}/${vitals.diastolic}` : "--", color: "text-luxury-greenEmerald", icon: <Droplet size={11} /> },
               ].map((v) => (
-                <div key={v.label} className="bg-zinc-950/90 border border-zinc-900 rounded-xl p-2.5 text-center">
-                  <div className={`flex items-center justify-center gap-1 text-[8px] font-mono ${v.color} mb-1`}>
+                <div key={v.label} className="bg-zinc-950/90 border border-zinc-900 rounded-xl p-2.5 text-center hover:border-luxury-goldRoyal/20 transition-all">
+                  <div className={`flex items-center justify-center gap-1 text-[9px] font-mono ${v.color} mb-1 uppercase`}>
                     {v.icon} {v.label}
                   </div>
-                  <p className={`font-black text-xs ${v.color}`}>{v.value}</p>
+                  <p className={`font-black text-sm ${v.color}`}>{v.value}</p>
                 </div>
               ))}
             </div>

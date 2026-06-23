@@ -58,7 +58,7 @@ interface UseWebRTCReturn {
   isMicOn: boolean;
   isCamOn: boolean;
   isScreenSharing: boolean;
-  startCall: (patientId: string, patientName: string) => Promise<string>;
+  startCall: (patientId: string, patientName: string, existingRoomId?: string) => Promise<string>;
   joinCall: (roomId: string, doctorId: string, doctorName: string) => Promise<void>;
   endCall: () => Promise<void>;
   toggleMic: () => void;
@@ -171,15 +171,17 @@ export function useWebRTC(): UseWebRTCReturn {
 
   // ─── START CALL (PATIENT = CALLER) ────────────────────────────────────────
   const startCall = useCallback(
-    async (patientId: string, patientName: string): Promise<string> => {
+    async (patientId: string, patientName: string, existingRoomId?: string): Promise<string> => {
       setError(null);
       const stream = await getUserMedia();
       const pc = createPeerConnection(stream);
 
       setCallStatus("creating-offer");
 
-      // Create Firestore room
-      const roomRef = doc(collection(firestoreDb, "rooms"));
+      // Use existing or create new Firestore room reference
+      const roomRef = existingRoomId
+        ? doc(firestoreDb, "rooms", existingRoomId)
+        : doc(collection(firestoreDb, "rooms"));
       const newRoomId = roomRef.id;
 
       // Create SDP offer
@@ -191,12 +193,10 @@ export function useWebRTC(): UseWebRTCReturn {
         roomId: newRoomId,
         patientId,
         patientName,
-        doctorId: null,
-        doctorName: null,
         status: "waiting",
         offer: { type: offer.type, sdp: offer.sdp },
         createdAt: serverTimestamp(),
-      });
+      }, { merge: true });
 
       setRoomId(newRoomId);
       setCallStatus("waiting-for-doctor");

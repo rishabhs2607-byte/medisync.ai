@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { getMediSyncDb, saveMediSyncDb } from "@/services/firebase";
+import { getMediSyncDb, saveMediSyncDb, writePatientVitalsToFirestore } from "@/services/firebase";
 import { Check, Edit3 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
@@ -46,6 +46,7 @@ export default function IoTSimulator() {
       };
       
       saveMediSyncDb(db);
+      writePatientVitalsToFirestore(patientId, patient.name, patient.vitals);
       window.dispatchEvent(new Event("storage"));
 
       setManualSaveSuccess(true);

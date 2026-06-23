@@ -263,7 +263,7 @@ export default function PatientDashboard() {
         <div className="absolute inset-0 bg-grid-pattern opacity-10 pointer-events-none" />
 
         {/* ── TOP HEADER ── */}
-        <div className="bg-luxury-pureBlack border-b border-luxury-goldRoyal/10 py-5 relative z-10 sticky top-0 backdrop-blur-md bg-opacity-95">
+        <div className="bg-luxury-pureBlack border-b border-luxury-goldRoyal/10 py-3 relative z-10 sticky top-0 backdrop-blur-md bg-opacity-95">
           <div className="max-w-7xl mx-auto px-6 flex items-center justify-between gap-4">
             <div className="flex items-center gap-4">
               <Link href="/" className="p-2 hover:bg-zinc-900 rounded-lg text-zinc-400 hover:text-white transition-colors">
