@@ -7,6 +7,7 @@ import {
   doc,
   setDoc,
   getDoc,
+  getDocs,
   updateDoc,
   onSnapshot,
   addDoc,
@@ -133,19 +134,38 @@ export function useWebRTC(): UseWebRTCReturn {
     }
   };
 
+  // Helper to clear subcollection
+  const clearCollection = async (collRef: any) => {
+    try {
+      const snap = await getDocs(collRef);
+      const promises = snap.docs.map((d) => deleteDoc(d.ref));
+      await Promise.all(promises);
+    } catch (e) {
+      console.warn("clearCollection error:", e);
+    }
+  };
+
   // ─── CREATE PEER CONNECTION ────────────────────────────────────────────────
-  const createPeerConnection = (stream: MediaStream): RTCPeerConnection => {
+  const createPeerConnection = (
+    stream: MediaStream,
+    onIceCandidate: (candidate: RTCIceCandidate) => void
+  ): RTCPeerConnection => {
     const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
 
     // Add local tracks to PC
     stream.getTracks().forEach((track) => pc.addTrack(track, stream));
 
+    // Bind ICE candidate handler immediately to avoid race condition
+    pc.onicecandidate = (event) => {
+      if (event.candidate) {
+        onIceCandidate(event.candidate);
+      }
+    };
+
     // Collect remote tracks
-    const remote = new MediaStream();
     pc.ontrack = (event) => {
-      event.streams[0]?.getTracks().forEach((track) => remote.addTrack(track));
+      const remote = event.streams[0] || new MediaStream([event.track]);
       setRemoteStream(remote);
-      // Guarantee UI unlocks when video actually arrives
       setCallStatus("connected");
     };
 
@@ -174,15 +194,26 @@ export function useWebRTC(): UseWebRTCReturn {
     async (patientId: string, patientName: string, existingRoomId?: string): Promise<string> => {
       setError(null);
       const stream = await getUserMedia();
-      const pc = createPeerConnection(stream);
-
-      setCallStatus("creating-offer");
 
       // Use existing or create new Firestore room reference
       const roomRef = existingRoomId
         ? doc(firestoreDb, "rooms", existingRoomId)
         : doc(collection(firestoreDb, "rooms"));
       const newRoomId = roomRef.id;
+
+      // Clear old candidates to avoid stale connection pollution
+      const callerCandidates = collection(roomRef, "callerCandidates");
+      const calleeCandidates = collection(roomRef, "calleeCandidates");
+      await clearCollection(callerCandidates);
+      await clearCollection(calleeCandidates);
+
+      const pc = createPeerConnection(stream, async (candidate) => {
+        try {
+          await addDoc(callerCandidates, candidate.toJSON());
+        } catch (e) {}
+      });
+
+      setCallStatus("creating-offer");
 
       // Create SDP offer
       const offer = await pc.createOffer();
@@ -201,14 +232,6 @@ export function useWebRTC(): UseWebRTCReturn {
       setRoomId(newRoomId);
       setCallStatus("waiting-for-doctor");
 
-      // Send caller ICE candidates to Firestore
-      const callerCandidates = collection(roomRef, "callerCandidates");
-      pc.onicecandidate = async (event) => {
-        if (event.candidate) {
-          await addDoc(callerCandidates, event.candidate.toJSON());
-        }
-      };
-
       // Listen for doctor's answer SDP
       const unsub1 = onSnapshot(roomRef, async (snap) => {
         const data = snap.data();
@@ -223,7 +246,6 @@ export function useWebRTC(): UseWebRTCReturn {
       });
 
       // Listen for doctor's ICE candidates
-      const calleeCandidates = collection(roomRef, "calleeCandidates");
       const unsub2 = onSnapshot(calleeCandidates, (snap) => {
         snap.docChanges().forEach(async (change) => {
           if (change.type === "added") {
@@ -249,8 +271,6 @@ export function useWebRTC(): UseWebRTCReturn {
       setCallStatus("joining");
 
       const stream = await getUserMedia();
-      const pc = createPeerConnection(stream);
-
       const roomRef = doc(firestoreDb, "rooms", targetRoomId);
       const roomSnap = await getDoc(roomRef);
 
@@ -266,6 +286,16 @@ export function useWebRTC(): UseWebRTCReturn {
         setCallStatus("error");
         return;
       }
+
+      // Clear doctor's old candidates to avoid stale connection pollution
+      const calleeCandidates = collection(roomRef, "calleeCandidates");
+      await clearCollection(calleeCandidates);
+
+      const pc = createPeerConnection(stream, async (candidate) => {
+        try {
+          await addDoc(calleeCandidates, candidate.toJSON());
+        } catch (e) {}
+      });
 
       // Set remote offer
       await pc.setRemoteDescription(new RTCSessionDescription(roomData.offer));
@@ -284,14 +314,6 @@ export function useWebRTC(): UseWebRTCReturn {
 
       setRoomId(targetRoomId);
       setCallStatus("connecting");
-
-      // Send callee ICE candidates
-      const calleeCandidates = collection(roomRef, "calleeCandidates");
-      pc.onicecandidate = async (event) => {
-        if (event.candidate) {
-          await addDoc(calleeCandidates, event.candidate.toJSON());
-        }
-      };
 
       // Listen for patient's ICE candidates
       const callerCandidates = collection(roomRef, "callerCandidates");
