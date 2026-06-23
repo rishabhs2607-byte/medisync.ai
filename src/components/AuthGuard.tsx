@@ -92,7 +92,9 @@ export default function AuthGuard({ children, allowedRoles }: AuthGuardProps) {
   }
 
   // Doctor status pending check (only verified doctors can access)
-  if (user.role === "doctor" && user.status !== "approved") {
+  const isDevOverride = typeof window !== "undefined" && localStorage.getItem("dev_override") === "true";
+  
+  if (user.role === "doctor" && user.status !== "approved" && !isDevOverride) {
     return (
       <div className="min-h-screen bg-luxury-pureBlack flex items-center justify-center p-6 text-white relative">
         <div className="absolute inset-0 bg-grid-pattern opacity-10" />
@@ -123,24 +125,9 @@ export default function AuthGuard({ children, allowedRoles }: AuthGuardProps) {
             
             <button 
               onClick={() => {
-                // FORCE APPROVE DEV OVERRIDE
-                const activeUserStr = localStorage.getItem("medisync_activeUser");
-                if (activeUserStr) {
-                  const activeUser = JSON.parse(activeUserStr);
-                  activeUser.status = "approved";
-                  localStorage.setItem("medisync_activeUser", JSON.stringify(activeUser));
-                  
-                  const usersStr = localStorage.getItem("medisync_users");
-                  if (usersStr) {
-                    const users = JSON.parse(usersStr);
-                    const idx = users.findIndex((u: any) => u.uid === activeUser.uid);
-                    if (idx !== -1) {
-                      users[idx].status = "approved";
-                      localStorage.setItem("medisync_users", JSON.stringify(users));
-                    }
-                  }
-                  window.location.reload();
-                }
+                // FOOLPROOF DEV OVERRIDE
+                localStorage.setItem("dev_override", "true");
+                window.location.reload();
               }}
               className="w-full py-2 bg-luxury-goldRoyal/10 border border-luxury-goldRoyal/30 text-luxury-goldRoyal hover:bg-luxury-goldRoyal hover:text-luxury-pureBlack transition-all rounded-lg text-[10px] uppercase tracking-widest text-center font-extrabold flex items-center justify-center gap-2"
             >
