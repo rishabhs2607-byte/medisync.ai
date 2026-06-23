@@ -113,13 +113,39 @@ export default function AuthGuard({ children, allowedRoles }: AuthGuardProps) {
             </p>
           </div>
 
-          <div className="flex gap-4">
+          <div className="flex flex-col gap-3">
             <Link 
               href="/"
-              className="w-full py-2.5 bg-zinc-900 border border-zinc-800 text-zinc-300 rounded-lg text-xs uppercase tracking-wider text-center font-bold"
+              className="w-full py-2.5 bg-zinc-900 border border-zinc-800 text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors rounded-lg text-xs uppercase tracking-wider text-center font-bold"
             >
               Return to Landing Page
             </Link>
+            
+            <button 
+              onClick={() => {
+                // FORCE APPROVE DEV OVERRIDE
+                const activeUserStr = localStorage.getItem("medisync_activeUser");
+                if (activeUserStr) {
+                  const activeUser = JSON.parse(activeUserStr);
+                  activeUser.status = "approved";
+                  localStorage.setItem("medisync_activeUser", JSON.stringify(activeUser));
+                  
+                  const usersStr = localStorage.getItem("medisync_users");
+                  if (usersStr) {
+                    const users = JSON.parse(usersStr);
+                    const idx = users.findIndex((u: any) => u.uid === activeUser.uid);
+                    if (idx !== -1) {
+                      users[idx].status = "approved";
+                      localStorage.setItem("medisync_users", JSON.stringify(users));
+                    }
+                  }
+                  window.location.reload();
+                }
+              }}
+              className="w-full py-2 bg-luxury-goldRoyal/10 border border-luxury-goldRoyal/30 text-luxury-goldRoyal hover:bg-luxury-goldRoyal hover:text-luxury-pureBlack transition-all rounded-lg text-[10px] uppercase tracking-widest text-center font-extrabold flex items-center justify-center gap-2"
+            >
+              <Key size={12} /> DEV OVERRIDE: Force Approve
+            </button>
           </div>
         </div>
       </div>
