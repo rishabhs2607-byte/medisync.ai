@@ -20,12 +20,22 @@ import { db as firestoreDb } from "@/services/firebase";
 // Add TURN credentials below for cross-network (different ISP) support
 const ICE_SERVERS: RTCIceServer[] = [
   { urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] },
-  // Uncomment & add TURN creds for production cross-network:
-  // {
-  //   urls: "turn:relay.metered.ca:80",
-  //   username: "YOUR_TURN_USERNAME",
-  //   credential: "YOUR_TURN_CREDENTIAL",
-  // },
+  // OpenRelay Public TURN server to guarantee cross-network connectivity
+  {
+    urls: "turn:openrelay.metered.ca:80",
+    username: "openrelayproject",
+    credential: "openrelayproject",
+  },
+  {
+    urls: "turn:openrelay.metered.ca:443",
+    username: "openrelayproject",
+    credential: "openrelayproject",
+  },
+  {
+    urls: "turn:openrelay.metered.ca:443?transport=tcp",
+    username: "openrelayproject",
+    credential: "openrelayproject",
+  }
 ];
 
 export type CallStatus =
