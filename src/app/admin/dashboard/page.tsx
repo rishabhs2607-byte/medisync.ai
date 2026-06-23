@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import AuthGuard from "@/components/AuthGuard";
+import { useAuth } from "@/context/AuthContext";
 import {
   getMediSyncDb,
   saveMediSyncDb,
@@ -52,6 +53,7 @@ import {
   HospitalIcon,
   Eye,
   Trash2,
+  LogOut,
 } from "lucide-react";
 
 type Tab = "doctors" | "patients" | "hospitals" | "devices" | "logs" | "analytics";
@@ -66,6 +68,7 @@ interface AuditLog {
 }
 
 export default function AdminDashboard() {
+  const { logout } = useAuth();
   const [db, setDb] = useState<ReturnType<typeof getMediSyncDb> | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>("doctors");
   const [searchQuery, setSearchQuery] = useState("");
@@ -339,6 +342,14 @@ export default function AdminDashboard() {
                 }`}
               >
                 <RefreshCw size={15} />
+              </button>
+              {/* Logout Button */}
+              <button
+                onClick={logout}
+                className="p-2 hover:bg-luxury-redCrimson/10 border border-zinc-900 hover:border-luxury-redCrimson/30 rounded-lg text-zinc-400 hover:text-luxury-redCrimson transition-colors bg-zinc-950 flex items-center justify-center"
+                title="Logout"
+              >
+                <LogOut size={15} />
               </button>
               <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-luxury-richBlack border border-luxury-goldRoyal/10 text-xs">
                 <Terminal size={13} className="text-luxury-goldRoyal animate-pulse" />

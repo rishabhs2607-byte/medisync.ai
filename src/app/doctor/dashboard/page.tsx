@@ -14,7 +14,7 @@ import {
   Users, Heart, Wind, Thermometer, Droplet, FileText, AlertOctagon,
   Calendar, Check, Cpu, Stethoscope, Plus, ChevronRight, Video,
   ArrowLeft, Settings, ArrowRightLeft, ChevronDown, Clock, Wifi,
-  WifiOff, Activity, User, Bell, RefreshCw
+  WifiOff, Activity, User, Bell, RefreshCw, LogOut
 } from "lucide-react";
 
 interface WaitingRoom {
@@ -28,7 +28,7 @@ interface WaitingRoom {
 }
 
 export default function DoctorDashboard() {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const router = useRouter();
 
   const doctorId = user?.uid || "doc1";
@@ -228,6 +228,14 @@ export default function DoctorDashboard() {
                 <span className="inline-block w-2 h-2 bg-luxury-greenEmerald rounded-full animate-pulse" />
                 <span className="text-luxury-greenEmerald font-bold font-mono text-[10px]">Available</span>
               </div>
+              {/* Logout Button */}
+              <button
+                onClick={logout}
+                className="p-2 hover:bg-luxury-redCrimson/10 border border-zinc-900 hover:border-luxury-redCrimson/30 rounded-lg text-zinc-400 hover:text-luxury-redCrimson transition-colors bg-zinc-950 flex items-center justify-center"
+                title="Logout"
+              >
+                <LogOut size={18} />
+              </button>
             </div>
           </div>
         </div>
@@ -476,6 +484,29 @@ export default function DoctorDashboard() {
                     className="px-5 py-2 bg-luxury-goldRoyal text-luxury-pureBlack font-bold text-xs rounded-lg uppercase tracking-wider hover:opacity-90 transition-all flex items-center gap-1 shrink-0">
                     {transferSuccess ? <><Check size={12} /> Done!</> : "Transfer"}
                   </button>
+                </div>
+              </div>
+
+              {/* Medical History */}
+              <div className="glass-panel p-5 rounded-2xl border border-luxury-goldRoyal/15 bg-luxury-richBlack/60">
+                <div className="flex items-center gap-2 mb-3">
+                  <Activity className="text-luxury-goldRoyal" size={15} />
+                  <h3 className="text-xs font-bold text-white uppercase tracking-wider font-mono">Medical History</h3>
+                </div>
+                <div className="space-y-2 max-h-[220px] overflow-y-auto">
+                  {selectedPatient.history.length === 0 ? (
+                    <p className="text-[10px] text-zinc-500 text-center py-3 italic">No history records found</p>
+                  ) : (
+                    selectedPatient.history.map((record: any, idx: number) => (
+                      <div key={idx} className="p-3 bg-zinc-950 rounded-xl border border-zinc-900 text-xs">
+                        <div className="flex justify-between text-[10px] text-zinc-500 mb-1">
+                          <span>{record.date}</span>
+                          <span className="font-semibold">Dr. {record.doctor}</span>
+                        </div>
+                        <p className="text-white font-medium">{record.diagnosis}</p>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
             </div>

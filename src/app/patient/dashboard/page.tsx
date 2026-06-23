@@ -5,11 +5,12 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   getMediSyncDb, saveMediSyncDb, PatientRecord, Appointment, Prescription,
-  findBestDoctor, rtdb, writePatientVitalsToFirestore
+  findBestDoctor, rtdb, writePatientVitalsToFirestore, db as firestoreDb
 } from "@/services/firebase";
 import { useAuth } from "@/context/AuthContext";
 import { useWebRTC } from "@/hooks/useWebRTC";
 import { ref, onValue } from "firebase/database";
+import { collection, query, where, onSnapshot } from "firebase/firestore";
 import { analyzeVitals } from "@/services/aiEngine";
 import IoTSimulator from "@/components/IoTSimulator";
 import AuthGuard from "@/components/AuthGuard";
@@ -17,11 +18,11 @@ import {
   Heart, Wind, Thermometer, Activity as ECGIcon, Droplet, Calendar,
   FileText, Users, AlertTriangle, Plus, ArrowLeft, Bell, Cpu,
   ShieldCheck, Stethoscope, Check, Video, User, Edit3, X, Save,
-  Wifi, WifiOff, Clock
+  Wifi, WifiOff, Clock, LogOut
 } from "lucide-react";
 
 export default function PatientDashboard() {
-  const { user, updateProfile } = useAuth();
+  const { user, updateProfile, logout } = useAuth();
   const router = useRouter();
   const { startCall, callStatus } = useWebRTC();
 
@@ -56,6 +57,19 @@ export default function PatientDashboard() {
   const [tempHistory, setTempHistory] = useState<number[]>([]);
   const [isDeviceOnline, setIsDeviceOnline] = useState<boolean>(false);
   const [lastUpdatedText, setLastUpdatedText] = useState<string>("Never");
+
+  const [firestorePrescriptions, setFirestorePrescriptions] = useState<any[]>([]);
+
+  // Subscribe to Firestore prescriptions in real-time
+  useEffect(() => {
+    if (!user) return;
+    const q = query(collection(firestoreDb, "prescriptions"), where("patientId", "==", patientId));
+    const unsub = onSnapshot(q, (snap) => {
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      setFirestorePrescriptions(list);
+    });
+    return () => unsub();
+  }, [patientId, user]);
 
   // Firebase RTDB listener for IoT thermometer
   useEffect(() => {
@@ -257,6 +271,33 @@ export default function PatientDashboard() {
     patient.vitals.systolic, patient.vitals.diastolic, patient.vitals.glucose
   );
 
+  // Combine local and Firestore prescriptions
+  const combinedPrescriptions = [
+    ...firestorePrescriptions,
+    ...db.prescriptions.filter(p => p.patientId === patientId)
+  ];
+  // Deduplicate by ID
+  const uniquePrescriptions = combinedPrescriptions.filter(
+    (pres, index, self) => self.findIndex(p => p.id === pres.id) === index
+  );
+
+  // Generate history entries from prescriptions
+  const prescriptionHistory = uniquePrescriptions.map(pres => ({
+    date: pres.date,
+    diagnosis: `Prescription: ${pres.medicines.map((m: any) => m.name).join(", ")}` + (pres.notes ? ` (${pres.notes})` : ""),
+    doctor: pres.doctorName || "Doctor",
+  }));
+
+  // Combine with patient local history
+  const allHistory = [
+    ...prescriptionHistory,
+    ...patient.history
+  ];
+  // Deduplicate history by date + diagnosis
+  const uniqueHistory = allHistory.filter(
+    (item, index, self) => self.findIndex(x => x.date === item.date && x.diagnosis === item.diagnosis) === index
+  );
+
   return (
     <AuthGuard allowedRoles={["patient"]}>
       <div className="min-h-screen bg-luxury-pureBlack pb-12 text-zinc-100 relative">
@@ -316,6 +357,15 @@ export default function PatientDashboard() {
                   <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-luxury-redCrimson rounded-full animate-ping" />
                 )}
               </div>
+
+              {/* Logout Button */}
+              <button
+                onClick={logout}
+                className="p-2 hover:bg-luxury-redCrimson/10 border border-zinc-900 hover:border-luxury-redCrimson/30 rounded-lg text-zinc-400 hover:text-luxury-redCrimson transition-colors bg-zinc-950 flex items-center justify-center"
+                title="Logout"
+              >
+                <LogOut size={18} />
+              </button>
             </div>
           </div>
         </div>
@@ -546,11 +596,11 @@ export default function PatientDashboard() {
               <h2 className="text-sm font-extrabold uppercase tracking-wider mb-4 flex items-center gap-2 text-zinc-300">
                 <FileText size={16} className="text-luxury-goldRoyal" /> Clinical Timeline
               </h2>
-              {patient.history.length === 0 ? (
+              {uniqueHistory.length === 0 ? (
                 <p className="text-[10px] text-zinc-500 italic text-center py-4">No clinical records yet</p>
               ) : (
                 <div className="space-y-4 border-l border-zinc-800 pl-4 ml-2">
-                  {patient.history.map((record, index) => (
+                  {uniqueHistory.map((record, index) => (
                     <div key={index} className="relative">
                       <div className="absolute -left-[21px] top-1.5 w-1.5 h-1.5 rounded-full bg-luxury-goldRoyal" />
                       <p className="text-[10px] text-zinc-500 font-mono">{record.date}</p>
@@ -655,10 +705,10 @@ export default function PatientDashboard() {
                 <FileText size={14} className="text-luxury-goldRoyal" /> Prescriptions
               </h3>
               <div className="space-y-4">
-                {db.prescriptions.filter(p => p.patientId === patientId).length === 0 ? (
+                {uniquePrescriptions.length === 0 ? (
                   <p className="text-[10px] text-zinc-500 text-center py-2">No prescriptions yet</p>
                 ) : (
-                  db.prescriptions.filter(p => p.patientId === patientId).map((pres) => (
+                  uniquePrescriptions.map((pres) => (
                     <div key={pres.id} className="p-4 bg-luxury-pureBlack rounded-xl border border-zinc-900">
                       <div className="flex justify-between items-start mb-2 border-b border-zinc-900 pb-2">
                         <div>

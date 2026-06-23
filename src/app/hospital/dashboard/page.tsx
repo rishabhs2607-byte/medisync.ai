@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { getMediSyncDb } from "@/services/firebase";
 import AuthGuard from "@/components/AuthGuard";
+import { useAuth } from "@/context/AuthContext";
 import { 
   Building2, 
   Users, 
@@ -12,10 +13,12 @@ import {
   Activity, 
   ArrowLeft,
   PieChart,
-  BedDouble
+  BedDouble,
+  LogOut
 } from "lucide-react";
 
 export default function HospitalDashboard() {
+  const { logout } = useAuth();
   const [db, setDb] = useState<ReturnType<typeof getMediSyncDb> | null>(null);
 
   const loadDb = () => {
@@ -72,6 +75,14 @@ export default function HospitalDashboard() {
               <span className="text-zinc-500 font-mono">Beds Census: </span>
               <span className="font-bold text-luxury-greenEmerald font-mono">34 / 200</span>
             </div>
+            {/* Logout Button */}
+            <button
+              onClick={logout}
+              className="p-2 hover:bg-luxury-redCrimson/10 border border-zinc-900 hover:border-luxury-redCrimson/30 rounded-lg text-zinc-400 hover:text-luxury-redCrimson transition-colors bg-zinc-950 flex items-center justify-center"
+              title="Logout"
+            >
+              <LogOut size={18} />
+            </button>
           </div>
         </div>
       </div>

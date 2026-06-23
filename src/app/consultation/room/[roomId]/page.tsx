@@ -23,13 +23,16 @@ import {
   serverTimestamp,
   doc,
   getDoc,
+  getDocs,
   updateDoc,
+  deleteDoc,
 } from "firebase/firestore";
 import {
   Mic, MicOff, Video, VideoOff, Monitor, MonitorOff, PhoneOff, Send,
   Activity, AlertTriangle, FileCheck, Bot, Users, Wifi, WifiOff,
   ArrowLeft, MessageSquare, Heart, Thermometer, Droplet, Clock,
   CheckCircle, ChevronUp, ChevronDown, Shield, Stethoscope, User,
+  RefreshCw, LogOut,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -87,6 +90,8 @@ export default function ConsultationRoom() {
   const [presSubmitted, setPresSubmitted] = useState(false);
   const [endWarning, setEndWarning] = useState(false);
   const [callEnded, setCallEnded] = useState(false);
+  const [transferring, setTransferring] = useState(false);
+  const [transferBanner, setTransferBanner] = useState("");
 
   // ─── Attach streams to video elements ────────────────────────────────────
   useEffect(() => {
@@ -113,6 +118,19 @@ export default function ConsultationRoom() {
         const data = snap.data() as RoomData;
         setRoomData(data);
         if (data.status === "ended") setCallEnded(true);
+
+        // Auto-rejoin if patient has reset the room to waiting (doctor side only)
+        if (
+          role === "doctor" &&
+          user &&
+          data.status === "waiting" &&
+          callStatus !== "joining" &&
+          callStatus !== "connecting" &&
+          callStatus !== "connected"
+        ) {
+          console.log("Patient reset the call. Doctor is re-joining automatically...");
+          joinCall(roomId, user.uid, user.name).catch(console.error);
+        }
       }
     });
 
@@ -126,7 +144,118 @@ export default function ConsultationRoom() {
 
     return () => unsubRoom();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomId, user, role]);
+  }, [roomId, user, role, callStatus]);
+
+  // Sync draft to Firestore whenever doctor modifies it
+  const syncPrescriptionDraft = async (meds: any[], notes: string) => {
+    if (role !== "doctor") return;
+    try {
+      await updateDoc(doc(firestoreDb, "rooms", roomId), {
+        draftedMeds: meds,
+        presNotes: notes,
+      });
+    } catch (e) {}
+  };
+
+  // ─── Doctor Presence Heartbeat (Doctor side only) ────────────────────────
+  useEffect(() => {
+    if (role !== "doctor" || !roomId) return;
+    const updateHeartbeat = async () => {
+      try {
+        await updateDoc(doc(firestoreDb, "rooms", roomId), {
+          doctorHeartbeat: new Date().toISOString(),
+        });
+      } catch (e) {}
+    };
+    updateHeartbeat();
+    const interval = setInterval(updateHeartbeat, 5000);
+    return () => clearInterval(interval);
+  }, [role, roomId]);
+
+  // ─── Auto-transfer helper (Patient side) ──────────────────────────────────
+  const handleAutoTransfer = async (currentDoctorId: string) => {
+    const localDb = getMediSyncDb();
+    const currentRoom = roomData;
+    if (!currentRoom) return;
+
+    // Find all approved doctors excluding the inactive one
+    const eligibleDoctors = localDb.users.filter(
+      (u) => u.role === "doctor" && u.status === "approved" && u.uid !== currentDoctorId
+    );
+
+    if (eligibleDoctors.length === 0) {
+      console.warn("No backup doctors available.");
+      setTransferBanner("Doctor went inactive, but no other doctors are online/available right now.");
+      setTimeout(() => setTransferBanner(""), 5000);
+      return;
+    }
+
+    // Sort by workload (ascending)
+    eligibleDoctors.sort((a, b) => (a.workload || 0) - (b.workload || 0));
+    const backupDoc = eligibleDoctors[0];
+
+    try {
+      // Clear doctor's old candidates to avoid stale ICE candidates in connection
+      const calleeCandidates = collection(firestoreDb, "rooms", roomId, "calleeCandidates");
+      const snap = await getDocs(calleeCandidates);
+      const promises = snap.docs.map((d) => deleteDoc(d.ref));
+      await Promise.all(promises);
+
+      // Reset signaling and assign backup doctor
+      await updateDoc(doc(firestoreDb, "rooms", roomId), {
+        doctorId: backupDoc.uid,
+        doctorName: backupDoc.name,
+        answer: null, // Reset answer
+        status: "waiting", // Reset status
+        doctorHeartbeat: null, // Clear heartbeat
+      });
+
+      // Re-initiate connection as patient
+      if (user) {
+        startCall(user.uid, user.name, roomId).catch(console.error);
+      }
+    } catch (e) {
+      console.error("Auto transfer failed:", e);
+    }
+  };
+
+  // ─── Monitor doctor presence & Trigger Auto-Transfer (Patient side only) ───
+  useEffect(() => {
+    if (role !== "patient" || !roomData || transferring) return;
+
+    // Only monitor if a doctor has been assigned
+    if (!roomData.doctorId) return;
+
+    const interval = setInterval(async () => {
+      const now = Date.now();
+      const hb = roomData.doctorHeartbeat ? new Date(roomData.doctorHeartbeat).getTime() : 0;
+      // If no heartbeat yet, wait up to 25 seconds for initial connection, otherwise 15 seconds of silence
+      const maxSilence = hb ? 15 : 25;
+      const secondsSinceLastHeartbeat = hb ? (now - hb) / 1000 : 999;
+
+      // If doctor is inactive for too long
+      const isSilent = hb ? (secondsSinceLastHeartbeat > maxSilence) : false;
+      
+      const timeSinceCreation = roomData && (roomData as any).createdAt?.seconds 
+        ? (now - (roomData as any).createdAt.seconds * 1000) / 1000 
+        : 0;
+      const shouldTransfer = isSilent || (!hb && roomData.status === "waiting" && timeSinceCreation > 35);
+
+      if (shouldTransfer) {
+        clearInterval(interval);
+        setTransferring(true);
+        setTransferBanner("Current Doctor went inactive. Transferring you to another available clinician...");
+        
+        setTimeout(async () => {
+          await handleAutoTransfer(roomData.doctorId || "");
+          setTransferring(false);
+          setTransferBanner("");
+        }, 4000);
+      }
+    }, 4000);
+
+    return () => clearInterval(interval);
+  }, [role, roomData, transferring]);
 
   // ─── Subscribe to patient vitals from Firestore for both Doctor and Patient ────────────────────────
   useEffect(() => {
@@ -193,7 +322,9 @@ export default function ConsultationRoom() {
   // ─── Add medicine to draft ────────────────────────────────────────────────
   const addMedicine = () => {
     if (!medName || !medDosage || !medFreq || !medDur) return;
-    setDraftedMeds([...draftedMeds, { name: medName, dosage: medDosage, frequency: medFreq, duration: medDur, instructions: medInst }]);
+    const newMeds = [...draftedMeds, { name: medName, dosage: medDosage, frequency: medFreq, duration: medDur, instructions: medInst }];
+    setDraftedMeds(newMeds);
+    syncPrescriptionDraft(newMeds, presNotes);
     setMedName(""); setMedDosage(""); setMedFreq("Twice Daily"); setMedDur("5 Days");
   };
 
@@ -345,6 +476,14 @@ export default function ConsultationRoom() {
         <div className="bg-luxury-redCrimson/15 border-b border-luxury-redCrimson/30 px-4 py-2.5 flex items-center gap-2 text-xs text-luxury-redCrimson shrink-0 z-20">
           <AlertTriangle size={14} />
           <span>{error}</span>
+        </div>
+      )}
+
+      {/* ── TRANSFERRING BANNER ── */}
+      {transferBanner && (
+        <div className="bg-luxury-goldRoyal/20 border-b border-luxury-goldRoyal/30 px-4 py-3 flex items-center gap-2 text-xs text-luxury-goldRoyal shrink-0 z-20 animate-pulse">
+          <RefreshCw size={14} className="animate-spin" />
+          <span className="font-bold">{transferBanner}</span>
         </div>
       )}
 
@@ -676,7 +815,11 @@ export default function ConsultationRoom() {
 
                   <div>
                     <label className="block text-[8px] text-zinc-500 uppercase font-mono mb-1">Clinical Notes</label>
-                    <textarea rows={2} value={presNotes} onChange={(e) => setPresNotes(e.target.value)}
+                    <textarea rows={2} value={presNotes} 
+                      onChange={(e) => {
+                        setPresNotes(e.target.value);
+                        syncPrescriptionDraft(draftedMeds, e.target.value);
+                      }}
                       placeholder="Additional advice..."
                       className="w-full bg-zinc-900 border border-zinc-800 text-[10px] px-2.5 py-1.5 rounded-lg focus:outline-none placeholder-zinc-700 text-white focus:border-luxury-goldRoyal resize-none" />
                   </div>
@@ -695,6 +838,35 @@ export default function ConsultationRoom() {
                     className="w-full py-2.5 bg-luxury-redCrimson/15 border border-luxury-redCrimson/30 text-luxury-redCrimson font-bold rounded-xl text-xs uppercase tracking-wider hover:bg-luxury-redCrimson/25 transition-all flex items-center justify-center gap-1.5">
                     <PhoneOff size={13} /> End Consultation
                   </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Patient: Live prescription view */}
+          {role === "patient" && roomData && (
+            <div className="p-4 border-t border-zinc-900 bg-luxury-richBlack/30 space-y-3">
+              <span className="text-[10px] font-extrabold uppercase tracking-widest text-luxury-goldRoyal flex items-center gap-1.5">
+                <Bot size={12} /> Doctor's Live Prescription
+              </span>
+              {(!roomData.draftedMeds || roomData.draftedMeds.length === 0) ? (
+                <p className="text-[10px] text-zinc-500 font-mono py-2 text-center">Doctor is compiling prescription...</p>
+              ) : (
+                <div className="space-y-2">
+                  <div className="p-2.5 bg-zinc-950 rounded-lg border border-zinc-900 space-y-1.5">
+                    {roomData.draftedMeds.map((m: any, i: number) => (
+                      <div key={i} className="flex justify-between text-[9px] border-b border-zinc-900 pb-1">
+                        <span className="font-semibold text-white">{m.name} <span className="text-zinc-500">({m.dosage})</span></span>
+                        <span className="text-zinc-500 font-mono text-[8px]">{m.frequency} • {m.duration}</span>
+                      </div>
+                    ))}
+                  </div>
+                  {roomData.presNotes && (
+                    <div className="p-2.5 bg-zinc-950 rounded-lg border border-zinc-900">
+                      <p className="text-[8px] text-zinc-500 font-mono uppercase">Clinical Advice</p>
+                      <p className="text-[10px] text-zinc-300 mt-1 italic">"{roomData.presNotes}"</p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
