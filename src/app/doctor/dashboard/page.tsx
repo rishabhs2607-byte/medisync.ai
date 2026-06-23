@@ -84,6 +84,19 @@ export default function DoctorDashboard() {
   };
   useEffect(() => () => { if (vitalsUnsub) vitalsUnsub(); }, [vitalsUnsub]);
 
+  // Subscribe to live vitals for selected patient in the list
+  const [livePatientVitals, setLivePatientVitals] = useState<any>(null);
+  useEffect(() => {
+    if (!selectedPatientId) {
+      setLivePatientVitals(null);
+      return;
+    }
+    const unsub = subscribeToPatientVitals(selectedPatientId, (vitals) => {
+      if (vitals) setLivePatientVitals(vitals);
+    });
+    return () => unsub();
+  }, [selectedPatientId]);
+
   // Join call as doctor
   const handleJoinCall = (roomId: string) => {
     router.push(`/consultation/room/${roomId}?role=doctor`);
@@ -395,11 +408,11 @@ export default function DoctorDashboard() {
               {/* Vitals Grid */}
               <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                 {[
-                  { label: "HEART RATE", value: selectedPatient.vitals.heartRate ? `${selectedPatient.vitals.heartRate} bpm` : '--', color: "text-luxury-redCrimson" },
-                  { label: "SPO2", value: selectedPatient.vitals.spo2 ? `${selectedPatient.vitals.spo2}%` : '--', color: "text-luxury-blueElectric" },
-                  { label: "TEMP", value: selectedPatient.vitals.temperature ? `${selectedPatient.vitals.temperature}°F` : '--', color: "text-luxury-goldRoyal" },
-                  { label: "BP", value: selectedPatient.vitals.systolic ? `${selectedPatient.vitals.systolic}/${selectedPatient.vitals.diastolic}` : '--', color: "text-luxury-greenEmerald" },
-                  { label: "GLUCOSE", value: selectedPatient.vitals.glucose ? `${selectedPatient.vitals.glucose}` : '--', color: "text-amber-500" },
+                  { label: "HEART RATE", value: (livePatientVitals || selectedPatient.vitals).heartRate ? `${(livePatientVitals || selectedPatient.vitals).heartRate} bpm` : '--', color: "text-luxury-redCrimson" },
+                  { label: "SPO2", value: (livePatientVitals || selectedPatient.vitals).spo2 ? `${(livePatientVitals || selectedPatient.vitals).spo2}%` : '--', color: "text-luxury-blueElectric" },
+                  { label: "TEMP", value: (livePatientVitals || selectedPatient.vitals).temperature ? `${(livePatientVitals || selectedPatient.vitals).temperature}°F` : '--', color: "text-luxury-goldRoyal" },
+                  { label: "BP", value: (livePatientVitals || selectedPatient.vitals).systolic ? `${(livePatientVitals || selectedPatient.vitals).systolic}/${(livePatientVitals || selectedPatient.vitals).diastolic}` : '--', color: "text-luxury-greenEmerald" },
+                  { label: "GLUCOSE", value: (livePatientVitals || selectedPatient.vitals).glucose ? `${(livePatientVitals || selectedPatient.vitals).glucose}` : '--', color: "text-amber-500" },
                 ].map(v => (
                   <div key={v.label} className="glass-panel p-4 rounded-xl border border-white/5 bg-luxury-pureBlack/60 text-center">
                     <p className="text-[9px] text-zinc-500 font-mono uppercase tracking-wider">{v.label}</p>
@@ -415,8 +428,8 @@ export default function DoctorDashboard() {
                   <div className="absolute inset-0 bg-grid-pattern opacity-10" />
                   <svg className="w-full h-full text-luxury-redCrimson" viewBox="0 0 400 100" preserveAspectRatio="none">
                     <path fill="none" stroke="currentColor" strokeWidth="2"
-                      d={selectedPatient.vitals.ecg && selectedPatient.vitals.ecg.length > 0
-                        ? `M ${selectedPatient.vitals.ecg.map((val, idx) => `${idx * 10}, ${100 - (val / 150) * 100}`).join(" L ")}`
+                      d={(livePatientVitals || selectedPatient.vitals).ecg && (livePatientVitals || selectedPatient.vitals).ecg.length > 0
+                        ? `M ${(livePatientVitals || selectedPatient.vitals).ecg.map((val: number, idx: number) => `${idx * 10}, ${100 - (val / 150) * 100}`).join(" L ")}`
                         : "M 0 50 L 400 50"} />
                   </svg>
                 </div>
