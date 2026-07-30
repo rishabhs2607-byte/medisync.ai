@@ -548,8 +548,69 @@ export const loginUserWithFirebase = async (
   email: string,
   password: string
 ): Promise<UserProfile> => {
-  // Silent fallback for seeded System Administrator when network fails or admin is unseeded in the cloud
+  // Try to authenticate admin in Firebase, auto-seed if it doesn't exist
   if (email === "admin@medisync.ai" && password === "admin123") {
+    try {
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+      
+      const docRef = doc(db, "users", user.uid);
+      const docSnap = await getDoc(docRef);
+      let profile: UserProfile;
+      if (docSnap.exists()) {
+        profile = docSnap.data() as UserProfile;
+      } else {
+        profile = {
+          uid: user.uid,
+          name: "System Administrator",
+          email: "admin@medisync.ai",
+          role: "admin",
+          status: "active",
+          avatar: "https://api.dicebear.com/7.x/adventurer/svg?seed=admin"
+        };
+        await setDoc(docRef, profile);
+      }
+      
+      const localDb = getMediSyncDb();
+      const idx = localDb.users.findIndex(u => u.uid === profile.uid);
+      if (idx !== -1) localDb.users[idx] = profile;
+      else localDb.users.push(profile);
+      saveMediSyncDb(localDb);
+      return profile;
+    } catch (err: any) {
+      // If user does not exist in Firebase, auto-seed them
+      if (err.code === "auth/user-not-found" || err.code === "auth/invalid-credential") {
+        try {
+          const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+          const user = userCredential.user;
+          const profile: UserProfile = {
+            uid: user.uid,
+            name: "System Administrator",
+            email: "admin@medisync.ai",
+            role: "admin",
+            status: "active",
+            avatar: "https://api.dicebear.com/7.x/adventurer/svg?seed=admin"
+          };
+          await setDoc(doc(db, "users", user.uid), profile);
+          
+          const localDb = getMediSyncDb();
+          const idx = localDb.users.findIndex(u => u.uid === profile.uid);
+          if (idx !== -1) localDb.users[idx] = profile;
+          else localDb.users.push(profile);
+          saveMediSyncDb(localDb);
+          return profile;
+        } catch (regErr) {
+          console.error("Auto-seeding Admin failed:", regErr);
+        }
+      }
+      
+      // If it is a explicit wrong-password error, throw it!
+      if (err.code === "auth/wrong-password") {
+        throw err;
+      }
+    }
+
+    // Offline / fallback mode
     const localDb = getMediSyncDb();
     let adminProfile = localDb.users.find(u => u.email === email && u.role === "admin");
     if (!adminProfile) {
@@ -605,7 +666,17 @@ export const loginUserWithFirebase = async (
   } catch (error: any) {
     console.error("Firebase Login Error:", error);
     
-    // Mock login fallback when running offline
+    // If auth explicitly failed because of wrong password or invalid credentials, throw the error!
+    if (
+      error.code === "auth/wrong-password" ||
+      error.code === "auth/invalid-credential" ||
+      error.code === "auth/user-not-found" ||
+      error.code === "auth/invalid-email"
+    ) {
+      throw error;
+    }
+    
+    // Mock login fallback only when running offline (network error)
     const localDb = getMediSyncDb();
     const profile = localDb.users.find(u => u.email === email);
     if (profile) return profile;

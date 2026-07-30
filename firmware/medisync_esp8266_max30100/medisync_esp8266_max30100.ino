@@ -91,7 +91,7 @@ FirebaseConfig config;
 
 // --- Global variables for tracking ---
 unsigned long lastTelemetryTime = 0;
-const unsigned long TELEMETRY_INTERVAL = 10000; // 10s auto-upload interval
+const unsigned long TELEMETRY_INTERVAL = 15000; // 15s auto-upload interval
 
 // --- Buzzer Sounds ---
 void playBuzzerTone(int frequency, int durationMs) {
@@ -196,7 +196,9 @@ void showLogo() {
 }
 
 // MAX30100 beat detection callback (optional visual pulse monitor)
+volatile bool beatDetected = false;
 void onBeatDetected() {
+  beatDetected = true;
   Serial.println("Beat Detected!");
 }
 
@@ -240,54 +242,69 @@ void connectWiFi() {
 
 void performMeasurementAndUpload() {
   soundButtonClick();
-  renderScreen("MEASURING", "Place Finger", "Initializing...", "");
+  renderScreen("MEASURING", "Place finger", "Initializing...", "Keep steady");
   
-  // Warmup and clean readings buffer
-  float hrSamples[40];
-  float spo2Samples[40];
+  const int MAX_SAMPLES = 80;
+  float hrSamples[MAX_SAMPLES];
+  float spo2Samples[MAX_SAMPLES];
   int sampleCount = 0;
-  unsigned long startWait = millis();
   
-  // Read for 8 seconds to get a clean average
-  while (millis() - startWait < 8000) {
+  unsigned long startWait = millis();
+  unsigned long lastScreenUpdate = 0;
+  
+  beatDetected = false; // Reset beat flag before starting
+  
+  // Sample for up to 15 seconds, or until we get enough samples (40)
+  while (millis() - startWait < 15000 && sampleCount < 40) {
     pox.update();
+    
+    // Check beat detection callback - non-blocking buzzer sound
+    if (beatDetected) {
+      beatDetected = false;
+      tone(BUZZER_PIN, 1800, 30); // Play short beep in background (does not block pox.update())
+    }
     
     float currentHR = pox.getHeartRate();
     float currentSpO2 = pox.getSpO2();
     
-    // Outlier rejection and finger detection
+    // Only accept physiological values (SpO2 > 70% and HR between 40 and 220)
     if (currentSpO2 > 70.0 && currentHR > 40.0 && currentHR < 220.0) {
-      if (sampleCount < 40) {
+      if (sampleCount < MAX_SAMPLES) {
         hrSamples[sampleCount] = currentHR;
         spo2Samples[sampleCount] = currentSpO2;
         sampleCount++;
       }
     }
     
-    // Visual progress display on OLED
-    int progressPercent = map(millis() - startWait, 0, 8000, 0, 100);
-    String dots = "";
-    int activeBars = progressPercent / 10;
-    for (int i = 0; i < activeBars; i++) dots += "=";
-    
-    if (sampleCount > 0) {
-      renderScreen("READING...", "Keep finger steady", "SpO2: " + String((int)currentSpO2) + "%", dots);
-    } else {
-      renderScreen("READING...", "Place finger properly", "Waiting sensor...", dots);
+    // Throttle OLED updates to once every 500ms to prevent I2C bus slowdown
+    if (millis() - lastScreenUpdate >= 500) {
+      lastScreenUpdate = millis();
+      int progressPercent = map(millis() - startWait, 0, 15000, 0, 100);
+      if (progressPercent > 100) progressPercent = 100;
+      String progressBars = "";
+      int bars = progressPercent / 10;
+      for (int i = 0; i < bars; i++) progressBars += "=";
+      
+      if (sampleCount > 0) {
+        renderScreen("READING...", "Keep finger steady", "SpO2: " + String((int)currentSpO2) + "%", "HR: " + String((int)currentHR) + " bpm");
+      } else {
+        renderScreen("READING...", "Place properly", "No Finger?", progressBars);
+      }
     }
     
-    delay(30); // Yield to CPU and sensor
+    // Yield to let ESP8266 handle background tasks and prevent watchdog reset
+    yield();
   }
   
-  // Validate reading confidence
+  // If no finger detected or insufficient samples
   if (sampleCount < 10) {
-    renderScreen("ERROR", "No Finger Detected", "Place properly", "Press button to retry");
-    playBuzzerTone(500, 800);
-    delay(3000);
+    renderScreen("NO FINGER", "Sensor active", "Please place finger", "Will retry in 15s");
+    playBuzzerTone(400, 400);
+    delay(2000);
     return;
   }
   
-  // Sorting samples to remove outliers
+  // Sort samples to remove outliers (Bubble Sort)
   for (int i = 0; i < sampleCount - 1; i++) {
     for (int j = 0; j < sampleCount - i - 1; j++) {
       if (spo2Samples[j] > spo2Samples[j + 1]) {
@@ -303,13 +320,15 @@ void performMeasurementAndUpload() {
     }
   }
   
-  // Average middle 50% samples to filter noise and artifacts
+  // Trim top 15% and bottom 15% of samples
+  int trimCount = sampleCount * 0.15;
+  if (trimCount == 0 && sampleCount > 5) trimCount = 1;
+  
   float hrSum = 0;
   float spo2Sum = 0;
-  int trimOffset = sampleCount / 4; // trim 25% from top and 25% from bottom
   int averagedCount = 0;
   
-  for (int i = trimOffset; i < (sampleCount - trimOffset); i++) {
+  for (int i = trimCount; i < (sampleCount - trimCount); i++) {
     hrSum += hrSamples[i];
     spo2Sum += spo2Samples[i];
     averagedCount++;
@@ -318,12 +337,10 @@ void performMeasurementAndUpload() {
   float finalHR = hrSum / averagedCount;
   float finalSpO2 = spo2Sum / averagedCount;
   
-  // Guarantee values stay within valid physiological ranges
   if (finalSpO2 > 100.0) finalSpO2 = 100.0;
   
   soundMeasurementSuccess();
   
-  // Health Status Logic
   String statusMessage = "Normal";
   if (finalSpO2 < 90.0) {
     statusMessage = "Critical";
@@ -335,12 +352,12 @@ void performMeasurementAndUpload() {
     soundWarningBeep();
   } else {
     renderScreen("RESULT", "SpO2: " + String((int)finalSpO2) + "%  HR: " + String((int)finalHR), "Normal", "Healthy Level");
-    delay(2000);
+    delay(1000);
   }
   
   // Upload to Firebase RTDB if online
   if (WiFi.status() == WL_CONNECTED && Firebase.ready()) {
-    renderScreen("UPLOADING", "Sending to Cloud...", "BPM: " + String((int)finalHR), "Firebase RTDB");
+    renderScreen("UPLOADING", "Sending to Cloud...", "SpO2: " + String((int)finalSpO2) + "%", "Firebase RTDB");
     
     time_t now = time(nullptr);
     uint64_t timestamp_ms = (uint64_t)now * 1000;
@@ -349,7 +366,7 @@ void performMeasurementAndUpload() {
     FirebaseJson json;
     json.set("spo2", finalSpO2);
     json.set("heartRate", finalHR);
-    json.set("bpm", finalHR); // Fallback copy
+    json.set("bpm", finalHR);
     json.set("timestamp", timestamp_ms);
     json.set("rssi", rssi);
     json.set("status", "online");
@@ -369,7 +386,7 @@ void performMeasurementAndUpload() {
     renderScreen("OFFLINE RESULT", "Saved Locally", "SpO2: " + String((int)finalSpO2) + "%", "WiFi Offline");
   }
   
-  delay(3000);
+  delay(1500);
 }
 
 void setup() {
@@ -381,6 +398,7 @@ void setup() {
   
   // Initialize I2C Wire with SDA and SCL
   Wire.begin(OLED_SDA, OLED_SCL);
+  Wire.setClock(400000); // Set I2C clock to 400kHz for faster updates
   
   // Initialize OLED Display
   if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDRESS)) {
@@ -404,6 +422,7 @@ void setup() {
     for (;;);
   } else {
     pox.setOnBeatDetectedCallback(onBeatDetected);
+    pox.setIRLedCurrent(MAX30100_LED_CURR_11MA); // Increase IR LED current to 11mA for improved skin penetration and detection stability
   }
   
   connectWiFi();
@@ -420,6 +439,7 @@ void setup() {
   
   soundReadyToMeasure();
   renderScreen("READY", "System Operational", "Place finger & press", "Start Measure");
+  lastTelemetryTime = millis();
 }
 
 void loop() {
@@ -431,6 +451,13 @@ void loop() {
       lastTelemetryTime = millis();
       renderScreen("READY", "System Operational", "Place finger & press", "Start Measure");
     }
+  }
+  
+  // Automatic periodic check loop (every 15 seconds)
+  if (millis() - lastTelemetryTime >= TELEMETRY_INTERVAL) {
+    lastTelemetryTime = millis();
+    performMeasurementAndUpload();
+    renderScreen("READY", "System Operational", "Place finger & press", "Start Measure");
   }
   
   // Run sensor update loop when idle to keep callback active

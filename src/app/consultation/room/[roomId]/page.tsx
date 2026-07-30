@@ -52,6 +52,7 @@ interface RoomData {
   doctorId: string | null;
   doctorName: string | null;
   status: "waiting" | "active" | "ended";
+  doctorHeartbeat?: string | null;
 }
 
 export default function ConsultationRoom() {
@@ -285,6 +286,39 @@ export default function ConsultationRoom() {
         const p = dbInstance.patients.find((x) => x.uid === user.uid);
         if (p) {
           p.vitals.temperature = parseFloat(tempVal.toFixed(1));
+          p.vitals.lastUpdated = new Date(tsVal).toISOString();
+          saveMediSyncDb(dbInstance);
+
+          const updatedVitals = { ...p.vitals };
+          setVitals(updatedVitals);
+
+          // Push vitals to Firestore so doctor can see live device data
+          writePatientVitalsToFirestore(user.uid, p.name, updatedVitals);
+        }
+      }
+    });
+    return () => unsubscribe();
+  }, [role, user, roomId]);
+
+  // ─── Firebase RTDB listener for IoT oximeter (Patient side only) ────────────────────────
+  useEffect(() => {
+    if (role !== "patient" || !user || !rtdb) return;
+
+    const deviceId = "oximeter_01";
+    const telemetryRef = ref(rtdb, `device_telemetry/${deviceId}`);
+    const unsubscribe = onValue(telemetryRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data && (typeof data.spo2 === "number" || typeof data.heartRate === "number")) {
+        const spo2Val = typeof data.spo2 === "number" ? data.spo2 : null;
+        const hrVal = typeof data.heartRate === "number" ? data.heartRate : null;
+        const tsVal = Date.now();
+
+        // Sync to local DB
+        const dbInstance = getMediSyncDb();
+        const p = dbInstance.patients.find((x) => x.uid === user.uid);
+        if (p) {
+          if (spo2Val !== null) p.vitals.spo2 = spo2Val;
+          if (hrVal !== null) p.vitals.heartRate = hrVal;
           p.vitals.lastUpdated = new Date(tsVal).toISOString();
           saveMediSyncDb(dbInstance);
 

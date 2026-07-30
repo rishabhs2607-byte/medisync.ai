@@ -62,6 +62,8 @@ export default function PatientDashboard() {
   const [liveSpO2, setLiveSpO2] = useState<number | null>(null);
   const [liveHR, setLiveHR] = useState<number | null>(null);
   const [liveOxiTimestamp, setLiveOxiTimestamp] = useState<number | null>(null);
+  const [liveOxiRssi, setLiveOxiRssi] = useState<number | null>(null);
+  const [oxiHistory, setOxiHistory] = useState<number[]>([]);
   const [isOxiOnline, setIsOxiOnline] = useState<boolean>(false);
   const [lastOxiUpdatedText, setLastOxiUpdatedText] = useState<string>("Never");
 
@@ -104,6 +106,7 @@ export default function PatientDashboard() {
           p.vitals.temperature = parseFloat(tempVal.toFixed(1));
           p.vitals.lastUpdated = new Date(tsVal).toISOString();
           if (p.connectedDevice) {
+            p.connectedDevice.deviceId = deviceId;
             p.connectedDevice.status = "online";
             p.connectedDevice.lastSync = new Date(tsVal).toISOString();
           } else {
@@ -131,10 +134,19 @@ export default function PatientDashboard() {
         const spo2Val = typeof data.spo2 === "number" ? data.spo2 : null;
         const hrVal = typeof data.heartRate === "number" ? data.heartRate : null;
         const tsVal = Date.now();
+        const rssiVal = typeof data.rssi === "number" ? data.rssi : null;
         
-        if (spo2Val !== null) setLiveSpO2(spo2Val);
+        if (spo2Val !== null) {
+          setLiveSpO2(spo2Val);
+          setOxiHistory((prev) => {
+            const next = [...prev, spo2Val];
+            if (next.length > 12) next.shift();
+            return next;
+          });
+        }
         if (hrVal !== null) setLiveHR(hrVal);
         setLiveOxiTimestamp(tsVal);
+        setLiveOxiRssi(rssiVal);
         
         // Sync to local DB
         const dbInstance = getMediSyncDb();
@@ -143,6 +155,13 @@ export default function PatientDashboard() {
           if (spo2Val !== null) p.vitals.spo2 = spo2Val;
           if (hrVal !== null) p.vitals.heartRate = hrVal;
           p.vitals.lastUpdated = new Date(tsVal).toISOString();
+          if (p.connectedDevice) {
+            p.connectedDevice.deviceId = deviceId;
+            p.connectedDevice.status = "online";
+            p.connectedDevice.lastSync = new Date(tsVal).toISOString();
+          } else {
+            p.connectedDevice = { deviceId, status: "online", battery: 98, lastSync: new Date(tsVal).toISOString() };
+          }
           saveMediSyncDb(dbInstance);
           loadDb();
           // Push vitals to Firestore so doctor can see live device data
@@ -160,12 +179,25 @@ export default function PatientDashboard() {
       if (liveTimestamp) {
         const diffMs = Date.now() - liveTimestamp;
         const diffSec = Math.floor(diffMs / 1000);
-        setIsDeviceOnline(diffSec <= 30);
+        const isOnline = diffSec <= 30;
+        setIsDeviceOnline(isOnline);
         if (diffSec < 5) setLastUpdatedText("Just now");
         else if (diffSec < 60) setLastUpdatedText(`${diffSec} seconds ago`);
         else {
           const diffMin = Math.floor(diffSec / 60);
           setLastUpdatedText(`${diffMin} minute${diffMin > 1 ? "s" : ""} ago`);
+        }
+
+        // Sync offline status to local DB if device went offline
+        const dbInstance = getMediSyncDb();
+        const p = dbInstance.patients.find(x => x.uid === patientId);
+        if (p && p.connectedDevice && p.connectedDevice.deviceId === "thermometer_01") {
+          const currentStatus = isOnline ? "online" : "offline";
+          if (p.connectedDevice.status !== currentStatus) {
+            p.connectedDevice.status = currentStatus;
+            saveMediSyncDb(dbInstance);
+            loadDb();
+          }
         }
       } else {
         setIsDeviceOnline(false);
@@ -173,7 +205,7 @@ export default function PatientDashboard() {
       }
     }, 1000);
     return () => clearInterval(timer);
-  }, [liveTimestamp]);
+  }, [liveTimestamp, patientId, loadDb]);
 
   // Oximeter online check
   useEffect(() => {
@@ -181,12 +213,25 @@ export default function PatientDashboard() {
       if (liveOxiTimestamp) {
         const diffMs = Date.now() - liveOxiTimestamp;
         const diffSec = Math.floor(diffMs / 1000);
-        setIsOxiOnline(diffSec <= 30);
+        const isOnline = diffSec <= 30;
+        setIsOxiOnline(isOnline);
         if (diffSec < 5) setLastOxiUpdatedText("Just now");
         else if (diffSec < 60) setLastOxiUpdatedText(`${diffSec} seconds ago`);
         else {
           const diffMin = Math.floor(diffSec / 60);
           setLastOxiUpdatedText(`${diffMin} minute${diffMin > 1 ? "s" : ""} ago`);
+        }
+
+        // Sync offline status to local DB if device went offline
+        const dbInstance = getMediSyncDb();
+        const p = dbInstance.patients.find(x => x.uid === patientId);
+        if (p && p.connectedDevice && p.connectedDevice.deviceId === "oximeter_01") {
+          const currentStatus = isOnline ? "online" : "offline";
+          if (p.connectedDevice.status !== currentStatus) {
+            p.connectedDevice.status = currentStatus;
+            saveMediSyncDb(dbInstance);
+            loadDb();
+          }
         }
       } else {
         setIsOxiOnline(false);
@@ -194,7 +239,7 @@ export default function PatientDashboard() {
       }
     }, 1000);
     return () => clearInterval(timer);
-  }, [liveOxiTimestamp]);
+  }, [liveOxiTimestamp, patientId, loadDb]);
 
   const loadDb = useCallback(() => {
     setDb(getMediSyncDb());
@@ -328,9 +373,11 @@ export default function PatientDashboard() {
 
   const activeAlerts = db.alerts.filter(a => a.patientId === patientId && a.status === "active");
   const currentTemp = (liveTemp !== null && isDeviceOnline) ? parseFloat(liveTemp.toFixed(1)) : patient.vitals.temperature;
+  const currentSpO2 = (liveSpO2 !== null && isOxiOnline) ? liveSpO2 : patient.vitals.spo2;
+  const currentHR = (liveHR !== null && isOxiOnline) ? liveHR : patient.vitals.heartRate;
 
   const aiReport = analyzeVitals(
-    patient.vitals.heartRate, patient.vitals.spo2, currentTemp,
+    currentHR, currentSpO2, currentTemp,
     patient.vitals.systolic, patient.vitals.diastolic, patient.vitals.glucose
   );
 
@@ -453,7 +500,7 @@ export default function PatientDashboard() {
                 <div className="bg-luxury-pureBlack border border-zinc-900 p-4 rounded-xl flex items-center justify-between">
                   <div>
                     <p className="text-[9px] text-zinc-500 uppercase tracking-widest font-mono">Heart Rate</p>
-                    <p className="text-3xl font-black mt-1 text-white">{patient.vitals.heartRate || '--'}</p>
+                    <p className="text-3xl font-black mt-1 text-white">{currentHR || '--'}</p>
                     <p className="text-[9px] text-zinc-400 mt-1 font-mono">BPM</p>
                   </div>
                   <div className="p-2.5 bg-luxury-redCrimson/10 border border-luxury-redCrimson/25 rounded-xl text-luxury-redCrimson">
@@ -465,8 +512,8 @@ export default function PatientDashboard() {
                 <div className="bg-luxury-pureBlack border border-zinc-900 p-4 rounded-xl flex items-center justify-between">
                   <div>
                     <p className="text-[9px] text-zinc-500 uppercase tracking-widest font-mono">Oxygen Sat.</p>
-                    <p className="text-3xl font-black mt-1 text-white">{patient.vitals.spo2 ? `${patient.vitals.spo2}%` : '--'}</p>
-                    <p className="text-[9px] text-zinc-400 mt-1 font-mono">{patient.vitals.spo2 ? (patient.vitals.spo2 < 90 ? "Hypoxia Alert" : "Stable") : '--'}</p>
+                    <p className="text-3xl font-black mt-1 text-white">{currentSpO2 ? `${currentSpO2}%` : '--'}</p>
+                    <p className="text-[9px] text-zinc-400 mt-1 font-mono">{currentSpO2 ? (currentSpO2 < 90 ? "Hypoxia Alert" : "Stable") : '--'}</p>
                   </div>
                   <div className="p-2.5 bg-luxury-blueElectric/10 border border-luxury-blueElectric/25 rounded-xl text-luxury-blueElectric">
                     <Wind size={18} />
@@ -656,6 +703,137 @@ export default function PatientDashboard() {
                   <div className="flex justify-between text-[8px] text-zinc-500 font-mono border-t border-zinc-900 pt-1.5 mt-1">
                     <span>93°F</span><span>108°F</span>
                   </div>
+                </div>
+              </div>
+            </div>
+
+            {/* IoT Oximeter Panel */}
+            <div className="glass-panel p-6 rounded-2xl border border-luxury-goldRoyal/10 bg-luxury-richBlack/60 relative overflow-hidden">
+              <div className="flex items-center justify-between border-b border-zinc-900 pb-4 mb-5">
+                <div className="flex items-center gap-2">
+                  <span className={`w-2 h-2 rounded-full ${isOxiOnline ? "bg-luxury-greenEmerald animate-pulse" : "bg-zinc-700"}`} />
+                  <span className="text-[10px] text-zinc-400 font-mono uppercase">{isOxiOnline ? "Online" : "Offline"}</span>
+                </div>
+                <h2 className="text-sm font-extrabold uppercase tracking-wider text-luxury-goldRoyal flex items-center gap-2">
+                  <ECGIcon className="text-luxury-goldRoyal animate-pulse" size={16} />
+                  MediSync Oximeter (IoT)
+                </h2>
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {/* Live SpO2 */}
+                <div className="bg-luxury-pureBlack border border-zinc-900 p-4 rounded-xl flex flex-col justify-between relative overflow-hidden">
+                  {liveSpO2 !== null && isOxiOnline && liveSpO2 < 90.0 && (
+                    <div className="absolute top-0 left-0 right-0 h-1 bg-luxury-redCrimson animate-pulse" />
+                  )}
+                  <div>
+                    <p className="text-[9px] text-zinc-500 uppercase tracking-widest font-mono">Live SpO2</p>
+                    <div className="flex items-baseline gap-2 mt-1">
+                      <p className={`text-4xl font-black ${liveSpO2 !== null && isOxiOnline && liveSpO2 < 90.0 ? "text-luxury-redCrimson" : "text-white"}`}>
+                        {liveSpO2 !== null && isOxiOnline ? `${Math.round(liveSpO2)}` : "--"}
+                      </p>
+                      <span className="text-xs text-zinc-400 font-bold font-mono">%</span>
+                    </div>
+                  </div>
+                  <div className="mt-3">
+                    {liveSpO2 !== null && isOxiOnline ? (
+                      liveSpO2 < 90.0 ? (
+                        <div className="flex items-center gap-1.5 text-[9px] text-luxury-redCrimson font-bold uppercase font-mono bg-luxury-redCrimson/10 border border-luxury-redCrimson/20 px-2 py-1 rounded animate-pulse">
+                          <AlertTriangle size={10} /> Hypoxia Alert
+                        </div>
+                      ) : liveSpO2 <= 94.0 ? (
+                        <div className="flex items-center gap-1.5 text-[9px] text-luxury-goldRoyal font-bold uppercase font-mono bg-luxury-goldRoyal/10 border border-luxury-goldRoyal/20 px-2 py-1 rounded">
+                          <AlertTriangle size={10} /> Warning Range
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1.5 text-[9px] text-luxury-greenEmerald font-bold uppercase font-mono bg-luxury-greenEmerald/10 border border-luxury-greenEmerald/20 px-2 py-1 rounded">
+                          <Check size={10} /> Healthy SpO2
+                        </div>
+                      )
+                    ) : (
+                      <div className="text-[9px] text-zinc-500 font-mono bg-zinc-900 border border-zinc-800 px-2 py-1 rounded">
+                        Waiting for device...
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Live Heart Rate */}
+                <div className="bg-luxury-pureBlack border border-zinc-900 p-4 rounded-xl flex flex-col justify-between relative overflow-hidden">
+                  <div>
+                    <p className="text-[9px] text-zinc-500 uppercase tracking-widest font-mono">Live Pulse Rate</p>
+                    <div className="flex items-baseline gap-2 mt-1">
+                      <p className="text-4xl font-black text-white">
+                        {liveHR !== null && isOxiOnline ? `${Math.round(liveHR)}` : "--"}
+                      </p>
+                      <span className="text-xs text-zinc-400 font-bold font-mono">BPM</span>
+                    </div>
+                  </div>
+                  <div className="mt-3">
+                    {liveHR !== null && isOxiOnline ? (
+                      <div className="flex items-center gap-1.5 text-[9px] text-luxury-blueElectric font-bold uppercase font-mono bg-luxury-blueElectric/10 border border-luxury-blueElectric/20 px-2 py-1 rounded">
+                        <Heart className="text-luxury-redCrimson animate-pulse" size={10} /> Active Pulse
+                      </div>
+                    ) : (
+                      <div className="text-[9px] text-zinc-500 font-mono bg-zinc-900 border border-zinc-800 px-2 py-1 rounded">
+                        No active reading
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Device Info */}
+                <div className="bg-luxury-pureBlack border border-zinc-900 p-4 rounded-xl flex flex-col justify-between">
+                  <div>
+                    <p className="text-[9px] text-zinc-500 uppercase font-mono">Device ID</p>
+                    <p className="text-sm font-bold text-white mt-1 font-mono">oximeter_01</p>
+                  </div>
+                  <div>
+                    <p className="text-[9px] text-zinc-500 uppercase font-mono">Last Sync</p>
+                    <p className="text-[10px] text-zinc-300 font-mono mt-1">{lastOxiUpdatedText}</p>
+                  </div>
+                </div>
+
+                {/* WiFi */}
+                <div className="bg-luxury-pureBlack border border-zinc-900 p-4 rounded-xl flex flex-col justify-between">
+                  <p className="text-[9px] text-zinc-500 uppercase font-mono">WiFi Signal</p>
+                  {isOxiOnline && liveOxiRssi !== null ? (
+                    <div className="mt-1">
+                      <p className="text-sm font-bold text-white font-mono">{liveOxiRssi} dBm</p>
+                      <p className="text-[9px] text-luxury-blueElectric font-mono font-semibold uppercase mt-0.5">
+                        {liveOxiRssi >= -50 ? "Excellent" : liveOxiRssi >= -70 ? "Good" : liveOxiRssi >= -85 ? "Fair" : "Weak"}
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-sm font-bold text-zinc-600 mt-1 font-mono">No Signal</p>
+                  )}
+                  <div className="flex gap-0.5 items-end h-3 mt-2">
+                    {[90, 85, 75, 60].map((threshold, i) => (
+                      <div key={i} style={{ height: `${(i + 1) * 25}%` }}
+                        className={`w-full rounded-t-sm transition-all ${isOxiOnline && liveOxiRssi !== null && Math.abs(liveOxiRssi) <= Math.abs(-threshold + 100) ? "bg-luxury-blueElectric" : "bg-zinc-800"}`} />
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Trend Sparkline */}
+              <div className="mt-4 bg-luxury-pureBlack border border-zinc-900 p-4 rounded-xl flex flex-col justify-between">
+                <p className="text-[9px] text-zinc-500 uppercase font-mono mb-2">Oxygen Level Trend (SpO2 %)</p>
+                <div className="h-10 flex items-end gap-1">
+                  {oxiHistory.length === 0 ? (
+                    <span className="text-[9px] text-zinc-600 font-mono">Waiting for stream data...</span>
+                  ) : (
+                    oxiHistory.map((val, idx) => {
+                      const percent = Math.min(100, Math.max(10, ((val - 60) / (100 - 60)) * 100));
+                      return (
+                        <div key={idx} style={{ height: `${percent}%` }}
+                          className={`w-full rounded-t-sm transition-all ${val < 90 ? "bg-luxury-redCrimson" : val <= 94 ? "bg-luxury-goldRoyal" : "bg-luxury-greenEmerald"}`} />
+                      );
+                    })
+                  )}
+                </div>
+                <div className="flex justify-between text-[8px] text-zinc-500 font-mono border-t border-zinc-900 pt-1.5 mt-1">
+                  <span>60%</span><span>100%</span>
                 </div>
               </div>
             </div>
