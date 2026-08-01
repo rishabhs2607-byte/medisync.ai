@@ -53,6 +53,7 @@ export type CallStatus =
 interface UseWebRTCReturn {
   localStream: MediaStream | null;
   remoteStream: MediaStream | null;
+  hasRemote: boolean;
   callStatus: CallStatus;
   error: string | null;
   roomId: string | null;
@@ -65,9 +66,27 @@ interface UseWebRTCReturn {
   toggleMic: () => void;
   toggleCam: () => void;
   toggleScreenShare: () => Promise<void>;
+  retryCall: () => void;
 }
 
-export function useWebRTC(): UseWebRTCReturn {
+  const hasRemote = !!remoteStream;
+
+  // Retry connection: cleanup and reset state so UI can re‑initiate start/join
+  const retryCall = useCallback(() => {
+    cleanup();
+    setCallStatus('idle');
+    setError(null);
+    // Note: caller component should invoke startCall/joinCall again based on role
+  }, []);
+
+  // Detect connection timeout when waiting for remote stream
+  useEffect(() => {
+    if (callStatus === 'connecting') {
+      const timeout = setTimeout(() => {
+        if (!remoteStream) {
+          setCallStatus('error');
+          setError('Connection timeout – no remote stream');
+        }
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [callStatus, setCallStatus] = useState<CallStatus>("idle");
@@ -164,9 +183,14 @@ export function useWebRTC(): UseWebRTCReturn {
 
     // Collect remote tracks
     pc.ontrack = (event) => {
-      const remote = event.streams[0] || new MediaStream([event.track]);
-      setRemoteStream(remote);
-      setCallStatus("connected");
+      // If remoteStream already exists, add track; otherwise create new stream
+      setRemoteStream((prev) => {
+        const stream = prev || new MediaStream();
+        stream.addTrack(event.track);
+        return stream;
+      });
+      // Once we have at least one track, consider remote present
+      // callStatus will be set to connected below
     };
 
     pc.onconnectionstatechange = () => {
