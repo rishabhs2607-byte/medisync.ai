@@ -24,15 +24,15 @@ import {
 import { getDatabase, ref, set, onValue } from "firebase/database";
 import { getStorage } from "firebase/storage";
 
-// Real-world Firebase credentials fallback
+// Your web app's Firebase configuration
 const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "AIzaSyBsedBBMCahJXiNShwNICk7UxUJwY4229A",
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "medisync-2b25a.firebaseapp.com",
-  databaseURL: process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL || "https://medisync-2b25a-default-rtdb.firebaseio.com",
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "medisync-2b25a",
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "medisync-2b25a.firebasestorage.app",
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "1078960342951",
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || "1:1078960342951:web:c4f92f6ce7aea984b0d882"
+  apiKey: "AIzaSyBsedBBMCahJXiNShwNICk7UxUJwY4229A",
+  authDomain: "medisync-2b25a.firebaseapp.com",
+  databaseURL: "https://medisync-2b25a-default-rtdb.firebaseio.com",
+  projectId: "medisync-2b25a",
+  storageBucket: "medisync-2b25a.firebasestorage.app",
+  messagingSenderId: "1078960342951",
+  appId: "1:1078960342951:web:c4f92f6ce7aea984b0d882"
 };
 
 // Initialize Firebase
@@ -670,7 +670,6 @@ export const loginUserWithFirebase = async (
     if (
       error.code === "auth/wrong-password" ||
       error.code === "auth/invalid-credential" ||
-      error.code === "auth/user-not-found" ||
       error.code === "auth/invalid-email"
     ) {
       throw error;
