@@ -36,7 +36,7 @@ const ICE_SERVERS: RTCIceServer[] = [
     urls: "turn:openrelay.metered.ca:443?transport=tcp",
     username: "openrelayproject",
     credential: "openrelayproject",
-  }
+  },
 ];
 
 export type CallStatus =
@@ -69,24 +69,8 @@ interface UseWebRTCReturn {
   retryCall: () => void;
 }
 
-  const hasRemote = !!remoteStream;
-
-  // Retry connection: cleanup and reset state so UI can re‑initiate start/join
-  const retryCall = useCallback(() => {
-    cleanup();
-    setCallStatus('idle');
-    setError(null);
-    // Note: caller component should invoke startCall/joinCall again based on role
-  }, []);
-
-  // Detect connection timeout when waiting for remote stream
-  useEffect(() => {
-    if (callStatus === 'connecting') {
-      const timeout = setTimeout(() => {
-        if (!remoteStream) {
-          setCallStatus('error');
-          setError('Connection timeout – no remote stream');
-        }
+export const useWebRTC = (): UseWebRTCReturn => {
+  // ─── STATE & REFS ────────────────────────────────────────────────────────
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [callStatus, setCallStatus] = useState<CallStatus>("idle");
@@ -101,14 +85,7 @@ interface UseWebRTCReturn {
   const screenStreamRef = useRef<MediaStream | null>(null);
   const unsubscribersRef = useRef<Array<() => void>>([]);
 
-  // Cleanup all listeners & PC on unmount
-  useEffect(() => {
-    return () => {
-      cleanup();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
+  // ─── CLEANUP ─────────────────────────────────────────────────────────────
   const cleanup = useCallback(async () => {
     unsubscribersRef.current.forEach((u) => u());
     unsubscribersRef.current = [];
@@ -129,7 +106,7 @@ interface UseWebRTCReturn {
     setRemoteStream(null);
   }, []);
 
-  // ─── GET USER MEDIA ────────────────────────────────────────────────────────
+  // ─── USER MEDIA ────────────────────────────────────────────────────────
   const getUserMedia = async (): Promise<MediaStream> => {
     setCallStatus("requesting-media");
     try {
@@ -164,68 +141,54 @@ interface UseWebRTCReturn {
     }
   };
 
-  // ─── CREATE PEER CONNECTION ────────────────────────────────────────────────
+  // ─── PEER CONNECTION ─────────────────────────────────────────────────────
   const createPeerConnection = (
     stream: MediaStream,
     onIceCandidate: (candidate: RTCIceCandidate) => void
   ): RTCPeerConnection => {
     const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
 
-    // Add local tracks to PC
+    // Add local tracks
     stream.getTracks().forEach((track) => pc.addTrack(track, stream));
 
-    // Bind ICE candidate handler immediately to avoid race condition
     pc.onicecandidate = (event) => {
-      if (event.candidate) {
-        onIceCandidate(event.candidate);
-      }
+      if (event.candidate) onIceCandidate(event.candidate);
     };
 
-    // Collect remote tracks
     pc.ontrack = (event) => {
-      // If remoteStream already exists, add track; otherwise create new stream
       setRemoteStream((prev) => {
-        const stream = prev || new MediaStream();
-        stream.addTrack(event.track);
-        return stream;
+        const s = prev || new MediaStream();
+        s.addTrack(event.track);
+        return s;
       });
-      // Once we have at least one track, consider remote present
-      // callStatus will be set to connected below
     };
 
     pc.onconnectionstatechange = () => {
       if (pc.connectionState === "connected") setCallStatus("connected");
-      if (pc.connectionState === "disconnected" || pc.connectionState === "failed") {
+      if (pc.connectionState === "disconnected" || pc.connectionState === "failed")
         setCallStatus("ended");
-      }
     };
 
     pc.oniceconnectionstatechange = () => {
-      if (pc.iceConnectionState === "connected" || pc.iceConnectionState === "completed") {
+      if (pc.iceConnectionState === "connected" || pc.iceConnectionState === "completed")
         setCallStatus("connected");
-      }
-      if (pc.iceConnectionState === "disconnected" || pc.iceConnectionState === "failed") {
+      if (pc.iceConnectionState === "disconnected" || pc.iceConnectionState === "failed")
         setCallStatus("ended");
-      }
     };
 
     pcRef.current = pc;
     return pc;
   };
 
-  // ─── START CALL (PATIENT = CALLER) ────────────────────────────────────────
+  // ─── START CALL (PATIENT) ────────────────────────────────────────────────
   const startCall = useCallback(
     async (patientId: string, patientName: string, existingRoomId?: string): Promise<string> => {
       setError(null);
       const stream = await getUserMedia();
 
-      // Use existing or create new Firestore room reference
-      const roomRef = existingRoomId
-        ? doc(firestoreDb, "rooms", existingRoomId)
-        : doc(collection(firestoreDb, "rooms"));
+      const roomRef = existingRoomId ? doc(firestoreDb, "rooms", existingRoomId) : doc(collection(firestoreDb, "rooms"));
       const newRoomId = roomRef.id;
 
-      // Clear old candidates to avoid stale connection pollution
       const callerCandidates = collection(roomRef, "callerCandidates");
       const calleeCandidates = collection(roomRef, "calleeCandidates");
       await clearCollection(callerCandidates);
@@ -239,24 +202,25 @@ interface UseWebRTCReturn {
 
       setCallStatus("creating-offer");
 
-      // Create SDP offer
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
-      // Write room to Firestore
-      await setDoc(roomRef, {
-        roomId: newRoomId,
-        patientId,
-        patientName,
-        status: "waiting",
-        offer: { type: offer.type, sdp: offer.sdp },
-        createdAt: serverTimestamp(),
-      }, { merge: true });
+      await setDoc(
+        roomRef,
+        {
+          roomId: newRoomId,
+          patientId,
+          patientName,
+          status: "waiting",
+          offer: { type: offer.type, sdp: offer.sdp },
+          createdAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
 
       setRoomId(newRoomId);
       setCallStatus("waiting-for-doctor");
 
-      // Listen for doctor's answer SDP
       const unsub1 = onSnapshot(roomRef, async (snap) => {
         const data = snap.data();
         if (data?.answer && pc.signalingState !== "stable") {
@@ -269,7 +233,6 @@ interface UseWebRTCReturn {
         }
       });
 
-      // Listen for doctor's ICE candidates
       const unsub2 = onSnapshot(calleeCandidates, (snap) => {
         snap.docChanges().forEach(async (change) => {
           if (change.type === "added") {
@@ -288,7 +251,7 @@ interface UseWebRTCReturn {
     []
   );
 
-  // ─── JOIN CALL (DOCTOR = CALLEE) ──────────────────────────────────────────
+  // ─── JOIN CALL (DOCTOR) ──────────────────────────────────────────────────
   const joinCall = useCallback(
     async (targetRoomId: string, doctorId: string, doctorName: string): Promise<void> => {
       setError(null);
@@ -311,7 +274,6 @@ interface UseWebRTCReturn {
         return;
       }
 
-      // Clear doctor's old candidates to avoid stale connection pollution
       const calleeCandidates = collection(roomRef, "calleeCandidates");
       await clearCollection(calleeCandidates);
 
@@ -321,14 +283,11 @@ interface UseWebRTCReturn {
         } catch (e) {}
       });
 
-      // Set remote offer
       await pc.setRemoteDescription(new RTCSessionDescription(roomData.offer));
 
-      // Create answer
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
 
-      // Write answer + doctor info to room
       await updateDoc(roomRef, {
         answer: { type: answer.type, sdp: answer.sdp },
         doctorId,
@@ -339,7 +298,6 @@ interface UseWebRTCReturn {
       setRoomId(targetRoomId);
       setCallStatus("connecting");
 
-      // Listen for patient's ICE candidates
       const callerCandidates = collection(roomRef, "callerCandidates");
       const unsub = onSnapshot(callerCandidates, (snap) => {
         snap.docChanges().forEach(async (change) => {
@@ -398,9 +356,7 @@ interface UseWebRTCReturn {
 
     if (!isScreenSharing) {
       try {
-        const screenStream = await (navigator.mediaDevices as any).getDisplayMedia({
-          video: true,
-        });
+        const screenStream = await (navigator.mediaDevices as any).getDisplayMedia({ video: true });
         screenStreamRef.current = screenStream;
 
         const screenTrack = screenStream.getVideoTracks()[0];
@@ -408,7 +364,6 @@ interface UseWebRTCReturn {
         if (sender) await sender.replaceTrack(screenTrack);
 
         screenTrack.onended = async () => {
-          // Auto-restore camera when screen share stops
           const camTrack = localStreamRef.current?.getVideoTracks()[0];
           if (sender && camTrack) await sender.replaceTrack(camTrack);
           setIsScreenSharing(false);
@@ -428,6 +383,30 @@ interface UseWebRTCReturn {
     }
   }, [isScreenSharing]);
 
+  // ─── TIMEOUT & REMOTE FLAG ────────────────────────────────────────────────
+  const hasRemote = !!remoteStream;
+
+  useEffect(() => {
+    if (callStatus === "connecting") {
+      const timeout = setTimeout(() => {
+        if (!remoteStream) {
+          setCallStatus("error");
+          setError("Connection timeout – no remote stream");
+        }
+      }, 10000);
+      return () => clearTimeout(timeout);
+    }
+  }, [callStatus, remoteStream]);
+
+  // ─── RETRY CALL ───────────────────────────────────────────────────────────
+  const retryCall = useCallback(() => {
+    cleanup();
+    setCallStatus("idle");
+    setError(null);
+    // Caller component should invoke startCall/joinCall again based on role
+  }, [cleanup]);
+
+  // ─── RETURN ───────────────────────────────────────────────────────────────
   return {
     localStream,
     remoteStream,
@@ -446,4 +425,4 @@ interface UseWebRTCReturn {
     toggleScreenShare,
     retryCall,
   };
-}
+};
