@@ -431,6 +431,7 @@ interface UseWebRTCReturn {
   return {
     localStream,
     remoteStream,
+    hasRemote,
     callStatus,
     error,
     roomId,
@@ -443,5 +444,6 @@ interface UseWebRTCReturn {
     toggleMic,
     toggleCam,
     toggleScreenShare,
+    retryCall,
   };
 }
