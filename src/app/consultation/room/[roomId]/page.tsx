@@ -54,15 +54,9 @@ interface RoomData {
   status: "waiting" | "active" | "ended";
   doctorHeartbeat?: string | null;
   draftedMeds?: any[]; // list of drafted medications for doctor
+  presNotes?: string; // optional clinical advice notes
 }
-  roomId: string;
-  patientId: string;
-  patientName: string;
-  doctorId: string | null;
-  doctorName: string | null;
-  status: "waiting" | "active" | "ended";
-  doctorHeartbeat?: string | null;
-}
+
 
 export default function ConsultationRoom() {
   const params = useParams();

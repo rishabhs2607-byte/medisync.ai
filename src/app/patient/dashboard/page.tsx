@@ -29,6 +29,9 @@ export default function PatientDashboard() {
   const patientId = user?.uid || "pat1";
 
   const [db, setDb] = useState<ReturnType<typeof getMediSyncDb> | null>(null);
+  const loadDb = useCallback(() => {
+    setDb(getMediSyncDb());
+  }, []);
 
   // Smart matching booking state
   const [showMatchingModal, setShowMatchingModal] = useState(false);
@@ -241,9 +244,7 @@ export default function PatientDashboard() {
     return () => clearInterval(timer);
   }, [liveOxiTimestamp, patientId, loadDb]);
 
-  const loadDb = useCallback(() => {
-    setDb(getMediSyncDb());
-  }, []);
+
 
   useEffect(() => {
     loadDb();
@@ -970,7 +971,7 @@ export default function PatientDashboard() {
                         <span className="text-[9px] px-2 py-1 bg-luxury-goldRoyal/10 border border-luxury-goldRoyal/20 rounded text-luxury-goldRoyal font-mono font-semibold uppercase">Rx</span>
                       </div>
                       <div className="space-y-1.5 mt-2">
-                        {pres.medicines.map((med, idx) => (
+                        {pres.medicines.map((med: { name: string; dosage: string; frequency: string; duration: string; instructions?: string }, idx: number) => (
                           <div key={idx} className="flex justify-between items-center text-xs">
                             <span className="font-bold text-white">{med.name} <span className="text-[10px] text-zinc-500 font-normal">({med.dosage})</span></span>
                             <span className="text-[9px] text-zinc-400">{med.frequency}</span>
