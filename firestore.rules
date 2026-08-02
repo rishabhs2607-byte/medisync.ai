@@ -59,7 +59,7 @@ service cloud.firestore {
         // Patient can write their own vitals
         allow write: if isOwner(patientId);
         // Doctor/Hospital/Admin can read vitals
-        allow read: if isDoctor() || isHospital() || isAdmin();
+        allow read: if isDoctor() || isHospital() || isAdmin() || (isAuthenticated() && request.auth.uid == patientId);
       }
     }
 

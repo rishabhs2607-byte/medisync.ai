@@ -165,6 +165,13 @@ export const useWebRTC = (): UseWebRTCReturn => {
 
     // Add local tracks
     stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+    // Ensure video and audio transceivers are present for full bidirectional flow
+    try {
+      pc.addTransceiver('video', { direction: 'sendrecv' });
+      pc.addTransceiver('audio', { direction: 'sendrecv' });
+    } catch (e) {
+      console.warn('Transceiver addition failed:', e);
+    }
 
     pc.onicecandidate = (event) => {
       if (event.candidate) onIceCandidate(event.candidate);

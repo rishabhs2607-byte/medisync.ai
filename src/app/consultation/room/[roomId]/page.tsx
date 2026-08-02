@@ -114,6 +114,14 @@ export default function ConsultationRoom() {
     }
   }, [remoteStream]);
 
+  // Cleanup Firestore listeners when the call ends (prevents resource‑exhausted errors)
+  useEffect(() => {
+    if (callStatus === "ended") {
+      firestoreUnsubRefs.current.forEach((u) => u());
+      firestoreUnsubRefs.current = [];
+    }
+  }, [callStatus]);
+
   // Disable End Call button when call has ended or error
   const endButtonDisabled = callEnded || callStatus === "error" || isEnding;
 
@@ -123,7 +131,7 @@ export default function ConsultationRoom() {
 
     const roomRef = doc(firestoreDb, "rooms", roomId);
 
-    // Subscribe to room doc
+    // Subscribe to room doc and store the unsubscribe
     const unsubRoom = onSnapshot(roomRef, (snap) => {
       if (snap.exists()) {
         const data = snap.data() as RoomData;
@@ -144,6 +152,7 @@ export default function ConsultationRoom() {
         }
       }
     });
+    firestoreUnsubRefs.current.push(unsubRoom);
 
     if (role === "doctor" && user) {
       // Doctor joins existing room
@@ -223,9 +232,11 @@ export default function ConsultationRoom() {
     try {
       // Clear doctor's old candidates to avoid stale ICE candidates in connection
       const calleeCandidates = collection(firestoreDb, "rooms", roomId, "calleeCandidates");
-      const snap = await getDocs(calleeCandidates);
-      const promises = snap.docs.map((d) => deleteDoc(d.ref));
-      await Promise.all(promises);
+      const unsub = onSnapshot(calleeCandidates, (snap) => {
+        firestoreUnsubRefs.current.push(unsub);
+        const promises = snap.docs.map((d) => deleteDoc(d.ref));
+        Promise.all(promises);
+      });
 
       // Reset signaling and assign backup doctor
       await updateDoc(doc(firestoreDb, "rooms", roomId), {
@@ -299,7 +310,7 @@ export default function ConsultationRoom() {
 
   // ─── Firebase RTDB listener for IoT thermometer (Patient side only) ────────────────────────
   useEffect(() => {
-    if (role !== "patient" || !user || !rtdb) return;
+    if (!user || !rtdb) return;
 
     const deviceId = "thermometer_01";
     const telemetryRef = ref(rtdb, `device_telemetry/${deviceId}`);
@@ -330,7 +341,7 @@ export default function ConsultationRoom() {
 
   // ─── Firebase RTDB listener for IoT oximeter (Patient side only) ────────────────────────
   useEffect(() => {
-    if (role !== "patient" || !user || !rtdb) return;
+    if (!user || !rtdb) return;
 
     const deviceId = "oximeter_01";
     const telemetryRef = ref(rtdb, `device_telemetry/${deviceId}`);
