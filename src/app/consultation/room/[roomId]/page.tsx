@@ -94,6 +94,7 @@ export default function ConsultationRoom() {
   const [presNotes, setPresNotes] = useState("");
   const [presSubmitted, setPresSubmitted] = useState(false);
   const [endWarning, setEndWarning] = useState(false);
+  const [isEnding, setIsEnding] = useState(false);
   const [callEnded, setCallEnded] = useState(false);
   const [transferring, setTransferring] = useState(false);
   const [transferBanner, setTransferBanner] = useState("");
@@ -114,7 +115,7 @@ export default function ConsultationRoom() {
   }, [remoteStream]);
 
   // Disable End Call button when call has ended or error
-  const endButtonDisabled = callEnded || callStatus === "error";
+  const endButtonDisabled = callEnded || callStatus === "error" || isEnding;
 
   // ─── Load room data & auto-join ───────────────────────────────────────────
   useEffect(() => {
@@ -391,8 +392,13 @@ export default function ConsultationRoom() {
 
   // ─── End consultation ─────────────────────────────────────────────────────
   const handleEndConsult = async () => {
+    // Prevent multiple clicks
+    if (isEnding) return;
+    setIsEnding(true);
+
     if (role === "doctor" && draftedMeds.length === 0) {
       setEndWarning(true);
+      setIsEnding(false);
       return;
     }
 
@@ -418,26 +424,24 @@ export default function ConsultationRoom() {
         });
       }
       saveMediSyncDb(localDb);
-
-      // Try Firestore prescription write
       try {
         await addDoc(collection(firestoreDb, "prescriptions"), newPres);
       } catch (e) {}
-
       setPresSubmitted(true);
     }
 
-    await endCall();
-    // Mark room ended
     try {
+      await endCall();
       await updateDoc(doc(firestoreDb, "rooms", roomId), { status: "ended" });
     } catch (e) {}
-
     setCallEnded(true);
     setTimeout(() => {
       router.push(role === "doctor" ? "/doctor/dashboard" : "/patient/dashboard");
     }, 2500);
+    setIsEnding(false);
   };
+
+
 
   // ─── Status label ─────────────────────────────────────────────────────────
   const statusLabel: Record<string, { label: string; color: string }> = {
