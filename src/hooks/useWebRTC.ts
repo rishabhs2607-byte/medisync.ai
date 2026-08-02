@@ -173,7 +173,11 @@ export const useWebRTC = (): UseWebRTCReturn => {
     pc.ontrack = (event) => {
       setRemoteStream((prev) => {
         const s = prev || new MediaStream();
-        s.addTrack(event.track);
+        // Avoid adding duplicate tracks
+        const existingIds = s.getTracks().map(t => t.id);
+        if (!existingIds.includes(event.track.id)) {
+          s.addTrack(event.track);
+        }
         return s;
       });
     };

@@ -54,9 +54,12 @@ service cloud.firestore {
     match /patients/{patientId} {
       allow read, write: if (isOwner(patientId) && isActivePatient(patientId)) ||
                          (isApproved() && (isApprovedDoctor() || isHospital() || isAdmin()) && isActivePatient(patientId));
-      match /{allSubcollections=**} {
-        allow read, write: if (isOwner(patientId) && isActivePatient(patientId)) ||
-                           (isApproved() && (isApprovedDoctor() || isHospital() || isAdmin()) && isActivePatient(patientId));
+      // Live vitals subcollection
+      match /liveVitals/{vitalId} {
+        // Patient can write their own vitals
+        allow write: if isOwner(patientId);
+        // Doctor/Hospital/Admin can read vitals
+        allow read: if isDoctor() || isHospital() || isAdmin();
       }
     }
 
@@ -129,12 +132,7 @@ service cloud.firestore {
     // WebRTC Rooms (signalling & chat)
     match /rooms/{roomId} {
       allow read, create: if isAuthenticated();
-      allow update: if isAuthenticated() && (
-        resource.data.patientId == request.auth.uid ||
-        request.resource.data.doctorId == request.auth.uid ||
-        resource.data.doctorId == request.auth.uid ||
-        isAdmin()
-      );
+      allow update: if request.auth.uid == resource.data.patientId || request.auth.uid == resource.data.doctorId || isAdmin();
       match /callerCandidates/{id} { allow read, write: if isAuthenticated(); }
       match /calleeCandidates/{id} { allow read, write: if isAuthenticated(); }
       match /messages/{id} { allow read, write: if isAuthenticated(); }
