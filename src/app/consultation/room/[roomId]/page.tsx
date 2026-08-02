@@ -53,6 +53,7 @@ interface RoomData {
   doctorName: string | null;
   status: "waiting" | "active" | "ended";
   doctorHeartbeat?: string | null;
+  patientHeartbeat?: string | null;
   draftedMeds?: any[]; // list of drafted medications for doctor
   presNotes?: string; // optional clinical advice notes
 }
@@ -168,6 +169,21 @@ export default function ConsultationRoom() {
       try {
         await updateDoc(doc(firestoreDb, "rooms", roomId), {
           doctorHeartbeat: new Date().toISOString(),
+        });
+      } catch (e) {}
+    };
+    updateHeartbeat();
+    const interval = setInterval(updateHeartbeat, 5000);
+    return () => clearInterval(interval);
+  }, [role, roomId]);
+
+  // ─── Patient Presence Heartbeat (Patient side only) ────────────────────────
+  useEffect(() => {
+    if (role !== "patient" || !roomId) return;
+    const updateHeartbeat = async () => {
+      try {
+        await updateDoc(doc(firestoreDb, "rooms", roomId), {
+          patientHeartbeat: new Date().toISOString(),
         });
       } catch (e) {}
     };
@@ -574,9 +590,25 @@ export default function ConsultationRoom() {
               )}
               <div className="absolute bottom-3 left-3 px-2.5 py-1 bg-black/70 backdrop-blur-sm border border-white/5 rounded-lg text-[10px] font-semibold text-white flex items-center gap-1.5">
                 {role === "doctor" ? (
-                  <><User size={10} className="text-luxury-goldRoyal" /> {roomData?.patientName || "Patient"}</>
+                  <>
+                    <User size={12} className="text-luxury-greenEmerald" />
+                    <span className="text-zinc-300 font-mono text-[10px]">
+                      Patient: {roomData?.patientName}
+                    </span>
+                    {roomData?.doctorHeartbeat && (Date.now() - new Date(roomData.doctorHeartbeat).getTime() < 15000) && (
+                      <span className="ml-1 w-2 h-2 bg-luxury-greenEmerald rounded-full" title="Doctor online" />
+                    )}
+                  </>
                 ) : (
-                  <><Stethoscope size={10} className="text-luxury-blueElectric" /> {roomData?.doctorName ? `Dr. ${roomData.doctorName}` : "Doctor"}</>
+                  <>
+                    <Stethoscope size={12} className="text-luxury-blueElectric" />
+                    <span className="text-zinc-300 font-mono text-[10px]">
+                      {roomData?.doctorName ? `Dr. ${roomData.doctorName}` : "Waiting for doctor..."}
+                    </span>
+                    {roomData?.patientHeartbeat && (Date.now() - new Date(roomData.patientHeartbeat).getTime() < 15000) && (
+                      <span className="ml-1 w-2 h-2 bg-luxury-greenEmerald rounded-full" title="Patient online" />
+                    )}
+                  </>
                 )}
               </div>
               {hasRemote && (

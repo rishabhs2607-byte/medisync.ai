@@ -108,27 +108,40 @@ export const useWebRTC = (): UseWebRTCReturn => {
 
   // ─── USER MEDIA ────────────────────────────────────────────────────────
   const getUserMedia = async (): Promise<MediaStream> => {
-    setCallStatus("requesting-media");
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
-        audio: { echoCancellation: true, noiseSuppression: true },
-      });
+  setCallStatus("requesting-media");
+  try {
+    // Preferred constraints (ideal resolution)
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
+      audio: { echoCancellation: true, noiseSuppression: true },
+    });
       localStreamRef.current = stream;
       setLocalStream(stream);
+      setIsCamOn(true);
+      setIsMicOn(true);
       return stream;
-    } catch (err: any) {
+  } catch (err: any) {
+    // Fallback to minimal constraints if preferred fail
+    try {
+      const fallback = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      localStreamRef.current = fallback;
+      setLocalStream(fallback);
+      setIsCamOn(true);
+      setIsMicOn(true);
+      return fallback;
+    } catch (fallbackErr: any) {
       const msg =
-        err.name === "NotAllowedError"
+        fallbackErr.name === "NotAllowedError"
           ? "Camera/microphone permission denied. Please allow access in browser settings."
-          : err.name === "NotFoundError"
+          : fallbackErr.name === "NotFoundError"
           ? "No camera or microphone found on this device."
-          : `Media access failed: ${err.message}`;
+          : `Media access failed: ${fallbackErr.message}`;
       setError(msg);
       setCallStatus("error");
       throw new Error(msg);
     }
-  };
+  }
+};
 
   // Helper to clear subcollection
   const clearCollection = async (collRef: any) => {
