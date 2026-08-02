@@ -263,14 +263,17 @@ export default function ConsultationRoom() {
 
   // ─── Subscribe to patient vitals from Firestore for both Doctor and Patient ────────────────────────
   useEffect(() => {
-    const targetPatientId = role === "doctor" ? roomData?.patientId : user?.uid;
-    if (targetPatientId) {
+      // Subscribe to vitals of the appropriate participant.
+      // For doctors we need the patientId from the room data, which may become available later.
+      const targetPatientId = role === "doctor" ? roomData?.patientId : user?.uid;
+      if (!targetPatientId) return;
+
       const unsub = subscribeToPatientVitals(targetPatientId, (v, _name) => {
         if (v) setVitals(v);
       });
+
       return () => unsub();
-    }
-  }, [role, roomData?.patientId, user?.uid]);
+    }, [role, roomData?.patientId, user?.uid]);
 
   // ─── Firebase RTDB listener for IoT thermometer (Patient side only) ────────────────────────
   useEffect(() => {
