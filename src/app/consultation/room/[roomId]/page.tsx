@@ -82,7 +82,9 @@ export default function ConsultationRoom() {
   const [chatOpen, setChatOpen] = useState(true);
   const [presOpen, setPresOpen] = useState(false);
   const [vitals, setVitals] = useState<any>(null);
+const [loadingVitals, setLoadingVitals] = useState<boolean>(true);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const firestoreUnsubRefs = useRef<Array<() => void>>([]);
 
   // Prescription state (doctor only)
   const [medName, setMedName] = useState("");
@@ -104,6 +106,12 @@ export default function ConsultationRoom() {
     if (localVideoRef.current && localStream) {
       localVideoRef.current.srcObject = localStream;
     }
+    // Cleanup on unmount or stream change
+    return () => {
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = null;
+      }
+    };
   }, [localStream]);
 
   // Ensure remote video plays when remote stream changes
@@ -112,6 +120,12 @@ export default function ConsultationRoom() {
       remoteVideoRef.current.srcObject = remoteStream;
       remoteVideoRef.current.play().catch(() => {});
     }
+    // Cleanup on unmount or stream change
+    return () => {
+      if (remoteVideoRef.current) {
+        remoteVideoRef.current.srcObject = null;
+      }
+    };
   }, [remoteStream]);
 
   // Cleanup Firestore listeners when the call ends (prevents resource‑exhausted errors)
@@ -296,17 +310,21 @@ export default function ConsultationRoom() {
 
   // ─── Subscribe to patient vitals from Firestore for both Doctor and Patient ────────────────────────
   useEffect(() => {
-      // Subscribe to vitals of the appropriate participant.
-      // For doctors we need the patientId from the room data, which may become available later.
-      const targetPatientId = role === "doctor" ? roomData?.patientId : user?.uid;
-      if (!targetPatientId) return;
+    // Determine which patient ID we should listen to.
+    const targetPatientId = role === "doctor" ? (roomData?.patientId ?? user?.uid) : user?.uid;
+    if (!targetPatientId) {
+      setLoadingVitals(false);
+      return;
+    }
 
-      const unsub = subscribeToPatientVitals(targetPatientId, (v, _name) => {
-        if (v) setVitals(v);
-      });
+    setLoadingVitals(true);
+    const unsub = subscribeToPatientVitals(targetPatientId, (v, _name) => {
+      setVitals(v);
+      setLoadingVitals(false);
+    });
 
-      return () => unsub();
-    }, [role, roomData?.patientId, user?.uid]);
+    return () => unsub();
+  }, [role, roomData?.patientId, user?.uid]);
 
   // ─── Firebase RTDB listener for IoT thermometer (Patient side only) ────────────────────────
   useEffect(() => {
@@ -673,24 +691,44 @@ export default function ConsultationRoom() {
             </div>
           </div>
 
-          {/* Live vitals panel during call (both Patient and Doctor) */}
-          {vitals && (
-            <div className="grid grid-cols-4 gap-2 shrink-0">
-              {[
-                { label: "Heart Rate", value: vitals.heartRate ? `${vitals.heartRate} bpm` : "--", color: "text-luxury-redCrimson", icon: <Heart size={11} /> },
-                { label: "Oxygen (SpO₂)", value: vitals.spo2 ? `${vitals.spo2}%` : "--", color: "text-luxury-blueElectric", icon: <Activity size={11} /> },
-                { label: "Temperature", value: vitals.temperature ? `${vitals.temperature}°F` : "--", color: "text-luxury-goldRoyal", icon: <Thermometer size={11} /> },
-                { label: "Blood Pressure", value: (vitals.systolic && vitals.diastolic) ? `${vitals.systolic}/${vitals.diastolic}` : "--", color: "text-luxury-greenEmerald", icon: <Droplet size={11} /> },
-              ].map((v) => (
-                <div key={v.label} className="bg-zinc-950/90 border border-zinc-900 rounded-xl p-2.5 text-center hover:border-luxury-goldRoyal/20 transition-all">
-                  <div className={`flex items-center justify-center gap-1 text-[9px] font-mono ${v.color} mb-1 uppercase`}>
-                    {v.icon} {v.label}
-                  </div>
-                  <p className={`font-black text-sm ${v.color}`}>{v.value}</p>
-                </div>
-              ))}
-            </div>
-          )}
+{/* Live vitals panel during call (both Patient and Doctor) */}
+{vitals && (
+  <div className="grid grid-cols-4 gap-2 shrink-0">
+    {loadingVitals && (
+      <div className="col-span-4 text-center text-zinc-400 text-sm">
+        Loading vitals...
+      </div>
+    )}
+    {[{
+      label: "Heart Rate",
+      value: vitals?.heartRate ? `${vitals.heartRate} bpm` : "--",
+      color: "text-luxury-redCrimson",
+      icon: <Heart size={11} />
+    }, {
+      label: "Oxygen (SpO₂)",
+      value: vitals?.spo2 ? `${vitals.spo2}%` : "--",
+      color: "text-luxury-blueElectric",
+      icon: <Activity size={11} />
+    }, {
+      label: "Temperature",
+      value: vitals?.temperature ? `${vitals.temperature}°F` : "--",
+      color: "text-luxury-goldRoyal",
+      icon: <Thermometer size={11} />
+    }, {
+      label: "Blood Pressure",
+      value: (vitals?.systolic && vitals?.diastolic) ? `${vitals.systolic}/${vitals.diastolic}` : "--",
+      color: "text-luxury-greenEmerald",
+      icon: <Droplet size={11} />
+    }].map((v) => (
+      <div key={v.label} className="bg-zinc-950/90 border border-zinc-900 rounded-xl p-2.5 text-center hover:border-luxury-goldRoyal/20 transition-all">
+        <div className={`flex items-center justify-center gap-1 text-[9px] font-mono ${v.color} mb-1 uppercase`}>
+          {v.icon} {v.label}
+        </div>
+        <p className={`font-black text-sm ${v.color}`}>{v.value}</p>
+      </div>
+    ))}
+  </div>
+)}
 
           {/* ── CALL CONTROLS ── */}
           <div className="flex justify-center items-center gap-3 py-3 bg-zinc-950/90 backdrop-blur-md border border-zinc-900 rounded-2xl shrink-0 px-6">
