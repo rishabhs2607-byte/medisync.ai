@@ -105,11 +105,16 @@ export default function ConsultationRoom() {
     }
   }, [localStream]);
 
+  // Ensure remote video plays when remote stream changes
   useEffect(() => {
     if (remoteVideoRef.current && remoteStream) {
       remoteVideoRef.current.srcObject = remoteStream;
+      remoteVideoRef.current.play().catch(() => {});
     }
   }, [remoteStream]);
+
+  // Disable End Call button when call has ended or error
+  const endButtonDisabled = callEnded || callStatus === "error";
 
   // ─── Load room data & auto-join ───────────────────────────────────────────
   useEffect(() => {
@@ -569,7 +574,7 @@ export default function ConsultationRoom() {
                 ref={remoteVideoRef}
                 autoPlay
                 playsInline
-                className={`absolute inset-0 w-full h-full object-cover ${hasRemote ? "opacity-100" : "opacity-0"}`}
+                className={`absolute inset-0 w-full h-full object-cover opacity-100`}
               />
               {!hasRemote && (
                 <div className="flex flex-col items-center gap-3 text-zinc-600">
@@ -723,7 +728,8 @@ export default function ConsultationRoom() {
 
             <button
               onClick={handleEndConsult}
-              className="p-3 bg-luxury-redCrimson hover:opacity-90 text-white rounded-full transition-colors border border-luxury-redCrimson/30 shadow-lg shadow-luxury-redCrimson/20"
+              disabled={endButtonDisabled}
+              className={`p-3 bg-luxury-redCrimson ${endButtonDisabled ? "opacity-40 cursor-not-allowed" : "hover:opacity-90"} text-white rounded-full transition-colors border border-luxury-redCrimson/30 shadow-lg shadow-luxury-redCrimson/20`}
               title="End Call"
             >
               <PhoneOff size={18} />
