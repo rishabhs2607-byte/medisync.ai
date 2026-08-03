@@ -292,11 +292,17 @@ export const updateUserProfile = async (uid: string, fields: Partial<UserProfile
 // ==========================================
 // NEW: WRITE PATIENT VITALS TO FIRESTORE (so doctor can see them live)
 // ==========================================
+let lastVitalsWriteTime = 0;
+
 export const writePatientVitalsToFirestore = async (
   patientId: string,
   patientName: string,
   vitals: PatientRecord["vitals"]
 ): Promise<void> => {
+  const now = Date.now();
+  // Throttle writes to max 1 per 3 seconds to avoid exhausting Firestore quota
+  if (now - lastVitalsWriteTime < 3000) return;
+  lastVitalsWriteTime = now;
   try {
     await setDoc(doc(db, "patient_vitals", patientId), {
       patientId,
@@ -316,14 +322,24 @@ export const subscribeToPatientVitals = (
   patientId: string,
   callback: (vitals: PatientRecord["vitals"] | null, patientName: string) => void
 ): (() => void) => {
-  const unsub = onSnapshot(doc(db, "patient_vitals", patientId), (snap) => {
-    if (snap.exists()) {
-      const data = snap.data();
-      callback(data.vitals, data.patientName || "");
-    } else {
-      callback(null, "");
+  const unsub = onSnapshot(
+    doc(db, "patient_vitals", patientId),
+    (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        callback(data.vitals, data.patientName || "");
+      } else {
+        callback(null, "");
+      }
+    },
+    (error) => {
+      console.warn("Patient vitals subscription fallback triggered:", error.message);
+      const localDb = getMediSyncDb();
+      const p = localDb.patients.find((x) => x.uid === patientId);
+      if (p) callback(p.vitals, p.name);
+      else callback(null, "");
     }
-  });
+  );
   return unsub;
 };
 

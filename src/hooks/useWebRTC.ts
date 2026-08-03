@@ -271,15 +271,19 @@ export const useWebRTC = (): UseWebRTCReturn => {
       setRoomId(newRoomId);
       setCallStatus("waiting-for-doctor");
 
+      let isSettingRemote = false;
       const unsub1 = onSnapshot(roomRef, async (snap) => {
         const data = snap.data();
-        if (data?.answer && pc.signalingState !== "stable") {
+        if (data?.answer && pc.signalingState === "have-local-offer" && !isSettingRemote) {
+          isSettingRemote = true;
           try {
             await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
             await processPendingIceCandidates();
             setCallStatus("connecting");
           } catch (e) {
             console.warn("setRemoteDescription error:", e);
+          } finally {
+            isSettingRemote = false;
           }
         }
       });

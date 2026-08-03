@@ -139,6 +139,8 @@ const [loadingVitals, setLoadingVitals] = useState<boolean>(true);
   // Disable End Call button when call has ended or error
   const endButtonDisabled = callEnded || callStatus === "error" || isEnding;
 
+  const hasJoinedCallRef = useRef(false);
+
   // ─── Load room data & auto-join ───────────────────────────────────────────
   useEffect(() => {
     if (!roomId || !user) return;
@@ -146,39 +148,33 @@ const [loadingVitals, setLoadingVitals] = useState<boolean>(true);
     const roomRef = doc(firestoreDb, "rooms", roomId);
 
     // Subscribe to room doc and store the unsubscribe
-    const unsubRoom = onSnapshot(roomRef, (snap) => {
-      if (snap.exists()) {
-        const data = snap.data() as RoomData;
-        setRoomData(data);
-        if (data.status === "ended") setCallEnded(true);
-
-        // Auto-rejoin if patient has reset the room to waiting (doctor side only)
-        if (
-          role === "doctor" &&
-          user &&
-          data.status === "waiting" &&
-          callStatus !== "joining" &&
-          callStatus !== "connecting" &&
-          callStatus !== "connected"
-        ) {
-          console.log("Patient reset the call. Doctor is re-joining automatically...");
-          joinCall(roomId, user.uid, user.name).catch(console.error);
+    const unsubRoom = onSnapshot(
+      roomRef,
+      (snap) => {
+        if (snap.exists()) {
+          const data = snap.data() as RoomData;
+          setRoomData(data);
+          if (data.status === "ended") setCallEnded(true);
         }
+      },
+      (err) => {
+        console.warn("Room subscription warning:", err.message);
       }
-    });
+    );
     firestoreUnsubRefs.current.push(unsubRoom);
 
-    if (role === "doctor" && user) {
-      // Doctor joins existing room
-      joinCall(roomId, user.uid, user.name).catch(console.error);
-    } else if (role === "patient" && user) {
-      // Patient starts call / re-initiates the connection for the room
-      startCall(user.uid, user.name, roomId).catch(console.error);
+    if (!hasJoinedCallRef.current) {
+      hasJoinedCallRef.current = true;
+      if (role === "doctor") {
+        joinCall(roomId, user.uid, user.name).catch(console.error);
+      } else if (role === "patient") {
+        startCall(user.uid, user.name, roomId).catch(console.error);
+      }
     }
 
     return () => unsubRoom();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomId, user, role, callStatus]);
+  }, [roomId, user?.uid, role]);
 
   // Sync draft to Firestore whenever doctor modifies it
   const syncPrescriptionDraft = async (meds: any[], notes: string) => {
