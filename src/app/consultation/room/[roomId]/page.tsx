@@ -738,7 +738,7 @@ useEffect(() => {
   </div>
 )}
 
-)}
+
 
           {/* ── CALL CONTROLS ── */}
           <div className="flex justify-center items-center gap-3 py-3 bg-zinc-950/90 backdrop-blur-md border border-zinc-900 rounded-2xl shrink-0 px-6">
