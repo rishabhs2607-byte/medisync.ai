@@ -1,8 +1,8 @@
+// Firestore security rules for MediSync AI
 rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-
     // Helper Functions
     function isAuthenticated() {
       return request.auth != null;
@@ -14,14 +14,14 @@ service cloud.firestore {
 
     function hasRole(role) {
       return isAuthenticated() &&
-             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-             getUserData().role == role;
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        getUserData().role == role;
     }
 
     function isApproved() {
       return isAuthenticated() &&
-             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-             getUserData().status == 'approved';
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        getUserData().status == 'approved';
     }
 
     function isAdmin() { return hasRole('admin'); }
@@ -33,7 +33,7 @@ service cloud.firestore {
     function isOwner(uid) { return isAuthenticated() && request.auth.uid == uid; }
     function isActivePatient(uid) {
       return exists(/databases/$(database)/documents/users/$(uid)) &&
-             get(/databases/$(database)/documents/users/$(uid)).data.status == 'active';
+        get(/databases/$(database)/documents/users/$(uid)).data.status == 'active';
     }
 
     // Users collection
@@ -54,6 +54,7 @@ service cloud.firestore {
     match /patients/{patientId} {
       allow read, write: if (isOwner(patientId) && isActivePatient(patientId)) ||
                          (isApproved() && (isApprovedDoctor() || isHospital() || isAdmin()) && isActivePatient(patientId));
+
       // Live vitals subcollection
       match /liveVitals/{vitalId} {
         // Patient can write their own vitals
@@ -157,6 +158,5 @@ service cloud.firestore {
       );
       allow delete: if isAdmin();
     }
-
   }
 }
