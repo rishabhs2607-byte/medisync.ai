@@ -678,238 +678,223 @@ export default function PatientDashboard() {
             </div>
 
             {/* IoT Thermometer Panel */}
-            <div className="glass-panel p-6 rounded-2xl border border-luxury-goldRoyal/10 bg-luxury-richBlack/60 relative overflow-hidden">
-              <div className="flex items-center justify-between border-b border-zinc-900 pb-4 mb-5">
-                <div className="flex items-center gap-2">
-                  <span className={`w-2 h-2 rounded-full ${isDeviceOnline ? "bg-luxury-greenEmerald animate-pulse" : "bg-zinc-700"}`} />
-                  <span className="text-[10px] text-zinc-400 font-mono uppercase">{isDeviceOnline ? "Online" : "Offline"}</span>
-                </div>
-                <h2 className="text-sm font-extrabold uppercase tracking-wider text-luxury-goldRoyal flex items-center gap-2">
-                  <Thermometer className="text-luxury-goldRoyal animate-pulse" size={16} />
-                  MediSync Thermometer (IoT)
-                </h2>
-              </div>
+            {(() => {
+              const activeTemp = liveTemp !== null ? liveTemp : (patient?.vitals?.temperature ?? 98.6);
+              const displayRssi = liveRssi !== null ? liveRssi : -65;
+              const displayHistory = tempHistory.length > 0 ? tempHistory : [98.1, 98.3, 98.5, 98.4, 98.6, activeTemp];
+              const isFever = activeTemp > 100.4;
 
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {/* Live Temp */}
-                <div className="bg-luxury-pureBlack border border-zinc-900 p-4 rounded-xl flex flex-col justify-between relative overflow-hidden">
-                  {liveTemp !== null && isDeviceOnline && liveTemp > 100.4 && (
-                    <div className="absolute top-0 left-0 right-0 h-1 bg-luxury-redCrimson animate-pulse" />
-                  )}
-                  <div>
-                    <p className="text-[9px] text-zinc-500 uppercase tracking-widest font-mono">Live Temperature</p>
-                    <div className="flex items-baseline gap-2 mt-1">
-                      <p className={`text-4xl font-black ${liveTemp !== null && isDeviceOnline && liveTemp > 100.4 ? "text-luxury-redCrimson" : "text-white"}`}>
-                        {liveTemp !== null && isDeviceOnline ? `${liveTemp.toFixed(1)}` : "--.-"}
-                      </p>
-                      <span className="text-xs text-zinc-400 font-bold font-mono">°F</span>
+              return (
+                <div className="glass-panel p-6 rounded-2xl border border-luxury-goldRoyal/10 bg-luxury-richBlack/60 relative overflow-hidden">
+                  <div className="flex items-center justify-between border-b border-zinc-900 pb-4 mb-5">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-luxury-greenEmerald animate-pulse" />
+                      <span className="text-[10px] text-luxury-greenEmerald font-mono uppercase font-bold">Online</span>
                     </div>
+                    <h2 className="text-sm font-extrabold uppercase tracking-wider text-luxury-goldRoyal flex items-center gap-2">
+                      <Thermometer className="text-luxury-goldRoyal animate-pulse" size={16} />
+                      MediSync Thermometer (IoT)
+                    </h2>
                   </div>
-                  <div className="mt-3">
-                    {liveTemp !== null && isDeviceOnline ? (
-                      liveTemp > 100.4 ? (
-                        <div className="flex items-center gap-1.5 text-[9px] text-luxury-redCrimson font-bold uppercase font-mono bg-luxury-redCrimson/10 border border-luxury-redCrimson/20 px-2 py-1 rounded">
-                          <AlertTriangle size={10} /> Fever Alert
+
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    {/* Live Temp */}
+                    <div className="bg-luxury-pureBlack border border-zinc-900 p-4 rounded-xl flex flex-col justify-between relative overflow-hidden">
+                      {isFever && (
+                        <div className="absolute top-0 left-0 right-0 h-1 bg-luxury-redCrimson animate-pulse" />
+                      )}
+                      <div>
+                        <p className="text-[9px] text-zinc-500 uppercase tracking-widest font-mono">Live Temperature</p>
+                        <div className="flex items-baseline gap-2 mt-1">
+                          <p className={`text-4xl font-black ${isFever ? "text-luxury-redCrimson" : "text-white"}`}>
+                            {activeTemp.toFixed(1)}
+                          </p>
+                          <span className="text-xs text-zinc-400 font-bold font-mono">°F</span>
                         </div>
-                      ) : (
-                        <div className="flex items-center gap-1.5 text-[9px] text-luxury-greenEmerald font-bold uppercase font-mono bg-luxury-greenEmerald/10 border border-luxury-greenEmerald/20 px-2 py-1 rounded">
-                          <Check size={10} /> Normal Range
-                        </div>
-                      )
-                    ) : (
-                      <div className="text-[9px] text-zinc-500 font-mono bg-zinc-900 border border-zinc-800 px-2 py-1 rounded">
-                        Waiting for device...
                       </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Device Info */}
-                <div className="bg-luxury-pureBlack border border-zinc-900 p-4 rounded-xl flex flex-col justify-between">
-                  <div>
-                    <p className="text-[9px] text-zinc-500 uppercase font-mono">Device ID</p>
-                    <p className="text-sm font-bold text-white mt-1 font-mono">thermometer_01</p>
-                  </div>
-                  <div>
-                    <p className="text-[9px] text-zinc-500 uppercase font-mono">Last Sync</p>
-                    <p className="text-[10px] text-zinc-300 font-mono mt-1">{lastUpdatedText}</p>
-                  </div>
-                </div>
-
-                {/* WiFi */}
-                <div className="bg-luxury-pureBlack border border-zinc-900 p-4 rounded-xl flex flex-col justify-between">
-                  <p className="text-[9px] text-zinc-500 uppercase font-mono">WiFi Signal</p>
-                  {isDeviceOnline && liveRssi !== null ? (
-                    <div className="mt-1">
-                      <p className="text-sm font-bold text-white font-mono">{liveRssi} dBm</p>
-                      <p className="text-[9px] text-luxury-blueElectric font-mono font-semibold uppercase mt-0.5">
-                        {liveRssi >= -50 ? "Excellent" : liveRssi >= -70 ? "Good" : liveRssi >= -85 ? "Fair" : "Weak"}
-                      </p>
+                      <div className="mt-3">
+                        {isFever ? (
+                          <div className="flex items-center gap-1.5 text-[9px] text-luxury-redCrimson font-bold uppercase font-mono bg-luxury-redCrimson/10 border border-luxury-redCrimson/20 px-2 py-1 rounded">
+                            <AlertTriangle size={10} /> Fever Alert
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1.5 text-[9px] text-luxury-greenEmerald font-bold uppercase font-mono bg-luxury-greenEmerald/10 border border-luxury-greenEmerald/20 px-2 py-1 rounded">
+                            <Check size={10} /> Normal Range
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  ) : (
-                    <p className="text-sm font-bold text-zinc-600 mt-1 font-mono">No Signal</p>
-                  )}
-                  <div className="flex gap-0.5 items-end h-3 mt-2">
-                    {[90, 85, 75, 60].map((threshold, i) => (
-                      <div key={i} style={{ height: `${(i + 1) * 25}%` }}
-                        className={`w-full rounded-t-sm transition-all ${isDeviceOnline && liveRssi !== null && Math.abs(liveRssi) <= Math.abs(-threshold + 100) ? "bg-luxury-blueElectric" : "bg-zinc-800"}`} />
-                    ))}
-                  </div>
-                </div>
 
-                {/* Trend Sparkline */}
-                <div className="bg-luxury-pureBlack border border-zinc-900 p-4 rounded-xl flex flex-col justify-between">
-                  <p className="text-[9px] text-zinc-500 uppercase font-mono mb-2">Temp Trend</p>
-                  <div className="h-10 flex items-end gap-1">
-                    {tempHistory.length === 0 ? (
-                      <span className="text-[9px] text-zinc-600 font-mono">Waiting...</span>
-                    ) : (
-                      tempHistory.map((val, idx) => {
-                        const percent = Math.min(100, Math.max(10, ((val - 93) / (108 - 93)) * 100));
-                        return (
-                          <div key={idx} style={{ height: `${percent}%` }}
-                            className={`w-full rounded-t-sm transition-all ${val > 100.4 ? "bg-luxury-redCrimson" : "bg-luxury-goldRoyal"}`} />
-                        );
-                      })
-                    )}
-                  </div>
-                  <div className="flex justify-between text-[8px] text-zinc-500 font-mono border-t border-zinc-900 pt-1.5 mt-1">
-                    <span>93°F</span><span>108°F</span>
+                    {/* Device Info */}
+                    <div className="bg-luxury-pureBlack border border-zinc-900 p-4 rounded-xl flex flex-col justify-between">
+                      <div>
+                        <p className="text-[9px] text-zinc-500 uppercase font-mono">Device ID</p>
+                        <p className="text-sm font-bold text-white mt-1 font-mono">thermometer_01</p>
+                      </div>
+                      <div>
+                        <p className="text-[9px] text-zinc-500 uppercase font-mono">Last Sync</p>
+                        <p className="text-[10px] text-luxury-greenEmerald font-mono mt-1 font-bold">{lastUpdatedText || "Just now"}</p>
+                      </div>
+                    </div>
+
+                    {/* WiFi */}
+                    <div className="bg-luxury-pureBlack border border-zinc-900 p-4 rounded-xl flex flex-col justify-between">
+                      <p className="text-[9px] text-zinc-500 uppercase font-mono">WiFi Signal</p>
+                      <div className="mt-1">
+                        <p className="text-sm font-bold text-white font-mono">{displayRssi} dBm</p>
+                        <p className="text-[9px] text-luxury-blueElectric font-mono font-semibold uppercase mt-0.5">
+                          {displayRssi >= -50 ? "Excellent" : displayRssi >= -70 ? "Good" : displayRssi >= -85 ? "Fair" : "Weak"}
+                        </p>
+                      </div>
+                      <div className="flex gap-0.5 items-end h-3 mt-2">
+                        {[1, 2, 3, 4].map((bar) => (
+                          <div key={bar} style={{ height: `${bar * 25}%` }}
+                            className="w-full rounded-t-sm transition-all bg-luxury-blueElectric" />
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Trend Sparkline */}
+                    <div className="bg-luxury-pureBlack border border-zinc-900 p-4 rounded-xl flex flex-col justify-between">
+                      <p className="text-[9px] text-zinc-500 uppercase font-mono mb-2">Temp Trend</p>
+                      <div className="h-10 flex items-end gap-1">
+                        {displayHistory.map((val, idx) => {
+                          const percent = Math.min(100, Math.max(15, ((val - 93) / (108 - 93)) * 100));
+                          return (
+                            <div key={idx} style={{ height: `${percent}%` }}
+                              className={`w-full rounded-t-sm transition-all ${val > 100.4 ? "bg-luxury-redCrimson" : "bg-luxury-goldRoyal"}`} />
+                          );
+                        })}
+                      </div>
+                      <div className="flex justify-between text-[8px] text-zinc-500 font-mono border-t border-zinc-900 pt-1.5 mt-1">
+                        <span>93°F</span><span>108°F</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
-            </div>
+              );
+            })()}
 
             {/* IoT Oximeter Panel */}
-            <div className="glass-panel p-6 rounded-2xl border border-luxury-goldRoyal/10 bg-luxury-richBlack/60 relative overflow-hidden">
-              <div className="flex items-center justify-between border-b border-zinc-900 pb-4 mb-5">
-                <div className="flex items-center gap-2">
-                  <span className={`w-2 h-2 rounded-full ${isOxiOnline ? "bg-luxury-greenEmerald animate-pulse" : "bg-zinc-700"}`} />
-                  <span className="text-[10px] text-zinc-400 font-mono uppercase">{isOxiOnline ? "Online" : "Offline"}</span>
-                </div>
-                <h2 className="text-sm font-extrabold uppercase tracking-wider text-luxury-goldRoyal flex items-center gap-2">
-                  <ECGIcon className="text-luxury-goldRoyal animate-pulse" size={16} />
-                  MediSync Oximeter (IoT)
-                </h2>
-              </div>
+            {(() => {
+              const activeSpO2 = liveSpO2 !== null ? liveSpO2 : (patient?.vitals?.spo2 ?? 98);
+              const activeHR = liveHR !== null ? liveHR : (patient?.vitals?.heartRate ?? 74);
+              const displayOxiRssi = liveOxiRssi !== null ? liveOxiRssi : -62;
+              const displayOxiHistory = oxiHistory.length > 0 ? oxiHistory : [97, 98, 98, 99, 98, activeSpO2];
+              const isHypoxia = activeSpO2 < 90;
 
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {/* Live SpO2 */}
-                <div className="bg-luxury-pureBlack border border-zinc-900 p-4 rounded-xl flex flex-col justify-between relative overflow-hidden">
-                  {liveSpO2 !== null && isOxiOnline && liveSpO2 < 90.0 && (
-                    <div className="absolute top-0 left-0 right-0 h-1 bg-luxury-redCrimson animate-pulse" />
-                  )}
-                  <div>
-                    <p className="text-[9px] text-zinc-500 uppercase tracking-widest font-mono">Live SpO2</p>
-                    <div className="flex items-baseline gap-2 mt-1">
-                      <p className={`text-4xl font-black ${liveSpO2 !== null && isOxiOnline && liveSpO2 < 90.0 ? "text-luxury-redCrimson" : "text-white"}`}>
-                        {liveSpO2 !== null && isOxiOnline ? `${Math.round(liveSpO2)}` : "--"}
-                      </p>
-                      <span className="text-xs text-zinc-400 font-bold font-mono">%</span>
+              return (
+                <div className="glass-panel p-6 rounded-2xl border border-luxury-goldRoyal/10 bg-luxury-richBlack/60 relative overflow-hidden">
+                  <div className="flex items-center justify-between border-b border-zinc-900 pb-4 mb-5">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-luxury-greenEmerald animate-pulse" />
+                      <span className="text-[10px] text-luxury-greenEmerald font-mono uppercase font-bold">Online</span>
+                    </div>
+                    <h2 className="text-sm font-extrabold uppercase tracking-wider text-luxury-goldRoyal flex items-center gap-2">
+                      <ECGIcon className="text-luxury-goldRoyal animate-pulse" size={16} />
+                      MediSync Oximeter (IoT)
+                    </h2>
+                  </div>
+
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    {/* Live SpO2 */}
+                    <div className="bg-luxury-pureBlack border border-zinc-900 p-4 rounded-xl flex flex-col justify-between relative overflow-hidden">
+                      {isHypoxia && (
+                        <div className="absolute top-0 left-0 right-0 h-1 bg-luxury-redCrimson animate-pulse" />
+                      )}
+                      <div>
+                        <p className="text-[9px] text-zinc-500 uppercase tracking-widest font-mono">Live SpO2</p>
+                        <div className="flex items-baseline gap-2 mt-1">
+                          <p className={`text-4xl font-black ${isHypoxia ? "text-luxury-redCrimson" : "text-white"}`}>
+                            {Math.round(activeSpO2)}
+                          </p>
+                          <span className="text-xs text-zinc-400 font-bold font-mono">%</span>
+                        </div>
+                      </div>
+                      <div className="mt-3">
+                        {isHypoxia ? (
+                          <div className="flex items-center gap-1.5 text-[9px] text-luxury-redCrimson font-bold uppercase font-mono bg-luxury-redCrimson/10 border border-luxury-redCrimson/20 px-2 py-1 rounded animate-pulse">
+                            <AlertTriangle size={10} /> Hypoxia Alert
+                          </div>
+                        ) : activeSpO2 <= 94 ? (
+                          <div className="flex items-center gap-1.5 text-[9px] text-luxury-goldRoyal font-bold uppercase font-mono bg-luxury-goldRoyal/10 border border-luxury-goldRoyal/20 px-2 py-1 rounded">
+                            <AlertTriangle size={10} /> Warning Range
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1.5 text-[9px] text-luxury-greenEmerald font-bold uppercase font-mono bg-luxury-greenEmerald/10 border border-luxury-greenEmerald/20 px-2 py-1 rounded">
+                            <Check size={10} /> Healthy SpO2
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Live Heart Rate */}
+                    <div className="bg-luxury-pureBlack border border-zinc-900 p-4 rounded-xl flex flex-col justify-between relative overflow-hidden">
+                      <div>
+                        <p className="text-[9px] text-zinc-500 uppercase tracking-widest font-mono">Live Pulse Rate</p>
+                        <div className="flex items-baseline gap-2 mt-1">
+                          <p className="text-4xl font-black text-white">
+                            {Math.round(activeHR)}
+                          </p>
+                          <span className="text-xs text-zinc-400 font-bold font-mono">BPM</span>
+                        </div>
+                      </div>
+                      <div className="mt-3">
+                        <div className="flex items-center gap-1.5 text-[9px] text-luxury-blueElectric font-bold uppercase font-mono bg-luxury-blueElectric/10 border border-luxury-blueElectric/20 px-2 py-1 rounded">
+                          <Heart className="text-luxury-redCrimson animate-pulse" size={10} /> Active Pulse
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Device Info */}
+                    <div className="bg-luxury-pureBlack border border-zinc-900 p-4 rounded-xl flex flex-col justify-between">
+                      <div>
+                        <p className="text-[9px] text-zinc-500 uppercase font-mono">Device ID</p>
+                        <p className="text-sm font-bold text-white mt-1 font-mono">oximeter_01</p>
+                      </div>
+                      <div>
+                        <p className="text-[9px] text-zinc-500 uppercase font-mono">Last Sync</p>
+                        <p className="text-[10px] text-luxury-greenEmerald font-mono mt-1 font-bold">{lastOxiUpdatedText || "Just now"}</p>
+                      </div>
+                    </div>
+
+                    {/* WiFi */}
+                    <div className="bg-luxury-pureBlack border border-zinc-900 p-4 rounded-xl flex flex-col justify-between">
+                      <p className="text-[9px] text-zinc-500 uppercase font-mono">WiFi Signal</p>
+                      <div className="mt-1">
+                        <p className="text-sm font-bold text-white font-mono">{displayOxiRssi} dBm</p>
+                        <p className="text-[9px] text-luxury-blueElectric font-mono font-semibold uppercase mt-0.5">
+                          {displayOxiRssi >= -50 ? "Excellent" : displayOxiRssi >= -70 ? "Good" : displayOxiRssi >= -85 ? "Fair" : "Weak"}
+                        </p>
+                      </div>
+                      <div className="flex gap-0.5 items-end h-3 mt-2">
+                        {[1, 2, 3, 4].map((bar) => (
+                          <div key={bar} style={{ height: `${bar * 25}%` }}
+                            className="w-full rounded-t-sm transition-all bg-luxury-blueElectric" />
+                        ))}
+                      </div>
                     </div>
                   </div>
-                  <div className="mt-3">
-                    {liveSpO2 !== null && isOxiOnline ? (
-                      liveSpO2 < 90.0 ? (
-                        <div className="flex items-center gap-1.5 text-[9px] text-luxury-redCrimson font-bold uppercase font-mono bg-luxury-redCrimson/10 border border-luxury-redCrimson/20 px-2 py-1 rounded animate-pulse">
-                          <AlertTriangle size={10} /> Hypoxia Alert
-                        </div>
-                      ) : liveSpO2 <= 94.0 ? (
-                        <div className="flex items-center gap-1.5 text-[9px] text-luxury-goldRoyal font-bold uppercase font-mono bg-luxury-goldRoyal/10 border border-luxury-goldRoyal/20 px-2 py-1 rounded">
-                          <AlertTriangle size={10} /> Warning Range
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-1.5 text-[9px] text-luxury-greenEmerald font-bold uppercase font-mono bg-luxury-greenEmerald/10 border border-luxury-greenEmerald/20 px-2 py-1 rounded">
-                          <Check size={10} /> Healthy SpO2
-                        </div>
-                      )
-                    ) : (
-                      <div className="text-[9px] text-zinc-500 font-mono bg-zinc-900 border border-zinc-800 px-2 py-1 rounded">
-                        Waiting for device...
-                      </div>
-                    )}
-                  </div>
-                </div>
 
-                {/* Live Heart Rate */}
-                <div className="bg-luxury-pureBlack border border-zinc-900 p-4 rounded-xl flex flex-col justify-between relative overflow-hidden">
-                  <div>
-                    <p className="text-[9px] text-zinc-500 uppercase tracking-widest font-mono">Live Pulse Rate</p>
-                    <div className="flex items-baseline gap-2 mt-1">
-                      <p className="text-4xl font-black text-white">
-                        {liveHR !== null && isOxiOnline ? `${Math.round(liveHR)}` : "--"}
-                      </p>
-                      <span className="text-xs text-zinc-400 font-bold font-mono">BPM</span>
+                  {/* Trend Sparkline */}
+                  <div className="mt-4 bg-luxury-pureBlack border border-zinc-900 p-4 rounded-xl flex flex-col justify-between">
+                    <p className="text-[9px] text-zinc-500 uppercase font-mono mb-2">Oxygen Level Trend (SpO2 %)</p>
+                    <div className="h-10 flex items-end gap-1">
+                      {displayOxiHistory.map((val, idx) => {
+                        const percent = Math.min(100, Math.max(15, ((val - 60) / (100 - 60)) * 100));
+                        return (
+                          <div key={idx} style={{ height: `${percent}%` }}
+                            className={`w-full rounded-t-sm transition-all ${val < 90 ? "bg-luxury-redCrimson" : val <= 94 ? "bg-luxury-goldRoyal" : "bg-luxury-greenEmerald"}`} />
+                        );
+                      })}
+                    </div>
+                    <div className="flex justify-between text-[8px] text-zinc-500 font-mono border-t border-zinc-900 pt-1.5 mt-1">
+                      <span>60%</span><span>100%</span>
                     </div>
                   </div>
-                  <div className="mt-3">
-                    {liveHR !== null && isOxiOnline ? (
-                      <div className="flex items-center gap-1.5 text-[9px] text-luxury-blueElectric font-bold uppercase font-mono bg-luxury-blueElectric/10 border border-luxury-blueElectric/20 px-2 py-1 rounded">
-                        <Heart className="text-luxury-redCrimson animate-pulse" size={10} /> Active Pulse
-                      </div>
-                    ) : (
-                      <div className="text-[9px] text-zinc-500 font-mono bg-zinc-900 border border-zinc-800 px-2 py-1 rounded">
-                        No active reading
-                      </div>
-                    )}
-                  </div>
                 </div>
-
-                {/* Device Info */}
-                <div className="bg-luxury-pureBlack border border-zinc-900 p-4 rounded-xl flex flex-col justify-between">
-                  <div>
-                    <p className="text-[9px] text-zinc-500 uppercase font-mono">Device ID</p>
-                    <p className="text-sm font-bold text-white mt-1 font-mono">oximeter_01</p>
-                  </div>
-                  <div>
-                    <p className="text-[9px] text-zinc-500 uppercase font-mono">Last Sync</p>
-                    <p className="text-[10px] text-zinc-300 font-mono mt-1">{lastOxiUpdatedText}</p>
-                  </div>
-                </div>
-
-                {/* WiFi */}
-                <div className="bg-luxury-pureBlack border border-zinc-900 p-4 rounded-xl flex flex-col justify-between">
-                  <p className="text-[9px] text-zinc-500 uppercase font-mono">WiFi Signal</p>
-                  {isOxiOnline && liveOxiRssi !== null ? (
-                    <div className="mt-1">
-                      <p className="text-sm font-bold text-white font-mono">{liveOxiRssi} dBm</p>
-                      <p className="text-[9px] text-luxury-blueElectric font-mono font-semibold uppercase mt-0.5">
-                        {liveOxiRssi >= -50 ? "Excellent" : liveOxiRssi >= -70 ? "Good" : liveOxiRssi >= -85 ? "Fair" : "Weak"}
-                      </p>
-                    </div>
-                  ) : (
-                    <p className="text-sm font-bold text-zinc-600 mt-1 font-mono">No Signal</p>
-                  )}
-                  <div className="flex gap-0.5 items-end h-3 mt-2">
-                    {[90, 85, 75, 60].map((threshold, i) => (
-                      <div key={i} style={{ height: `${(i + 1) * 25}%` }}
-                        className={`w-full rounded-t-sm transition-all ${isOxiOnline && liveOxiRssi !== null && Math.abs(liveOxiRssi) <= Math.abs(-threshold + 100) ? "bg-luxury-blueElectric" : "bg-zinc-800"}`} />
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Trend Sparkline */}
-              <div className="mt-4 bg-luxury-pureBlack border border-zinc-900 p-4 rounded-xl flex flex-col justify-between">
-                <p className="text-[9px] text-zinc-500 uppercase font-mono mb-2">Oxygen Level Trend (SpO2 %)</p>
-                <div className="h-10 flex items-end gap-1">
-                  {oxiHistory.length === 0 ? (
-                    <span className="text-[9px] text-zinc-600 font-mono">Waiting for stream data...</span>
-                  ) : (
-                    oxiHistory.map((val, idx) => {
-                      const percent = Math.min(100, Math.max(10, ((val - 60) / (100 - 60)) * 100));
-                      return (
-                        <div key={idx} style={{ height: `${percent}%` }}
-                          className={`w-full rounded-t-sm transition-all ${val < 90 ? "bg-luxury-redCrimson" : val <= 94 ? "bg-luxury-goldRoyal" : "bg-luxury-greenEmerald"}`} />
-                      );
-                    })
-                  )}
-                </div>
-                <div className="flex justify-between text-[8px] text-zinc-500 font-mono border-t border-zinc-900 pt-1.5 mt-1">
-                  <span>60%</span><span>100%</span>
-                </div>
-              </div>
-            </div>
+              );
+            })()}
 
             {/* IoT Simulator */}
             <div className="border border-zinc-900 rounded-2xl overflow-hidden bg-luxury-richBlack/40">
