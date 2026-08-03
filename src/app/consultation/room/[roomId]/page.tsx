@@ -271,9 +271,11 @@ export default function ConsultationRoom() {
     setVitalsModalOpen(false);
   };
 
-  // ─── Firebase RTDB listener for IoT thermometer (Patient side only) ────────────────────────
+  // ─── Firebase RTDB listener for IoT thermometer (Doctor & Patient Live Sync) ────────────
   useEffect(() => {
-    if (!user || !rtdb) return;
+    if (!rtdb) return;
+    const targetPatientId = role === "doctor" ? (roomData?.patientId || "pat1") : (user?.uid || "pat1");
+    if (!targetPatientId) return;
 
     const deviceId = "thermometer_01";
     const paths = [
@@ -281,7 +283,7 @@ export default function ConsultationRoom() {
       `devices/${deviceId}`,
       `telemetry/${deviceId}`,
       `device_telemetry`,
-      `telemetry_vitals/${user.uid}`
+      `telemetry_vitals/${targetPatientId}`
     ];
 
     const extractTemperature = (data: any): number | null => {
@@ -325,44 +327,66 @@ export default function ConsultationRoom() {
         }
 
         const tsVal = Date.now();
+        setVitals((prev: any) => ({
+          ...prev,
+          temperature: tempVal,
+          lastUpdated: new Date(tsVal).toISOString()
+        }));
+
         const dbInstance = getMediSyncDb();
-        const p = dbInstance.patients.find((x) => x.uid === user.uid);
+        const p = dbInstance.patients.find((x) => x.uid === targetPatientId);
         if (p) {
           p.vitals.temperature = tempVal;
           p.vitals.lastUpdated = new Date(tsVal).toISOString();
           saveMediSyncDb(dbInstance);
 
           const updatedVitals = { ...p.vitals };
-          setVitals(updatedVitals);
 
           try {
-            set(ref(rtdb, `telemetry_vitals/${user.uid}`), updatedVitals);
+            set(ref(rtdb, `telemetry_vitals/${targetPatientId}`), updatedVitals);
           } catch (e) {}
-          writePatientVitalsToFirestore(user.uid, p.name, updatedVitals);
+          writePatientVitalsToFirestore(targetPatientId, p.name, updatedVitals);
         }
       }
     };
 
     const unsubs = paths.map((path) => onValue(ref(rtdb, path), handleData));
     return () => unsubs.forEach((u) => u());
-  }, [role, user, roomId]);
+  }, [role, user, roomId, roomData?.patientId]);
 
-  // ─── Firebase RTDB listener for IoT oximeter (Patient side only) ────────────────────────
+  // ─── Firebase RTDB listener for IoT oximeter (Doctor & Patient Live Sync) ─────────────
   useEffect(() => {
-    if (!user || !rtdb) return;
+    if (!rtdb) return;
+    const targetPatientId = role === "doctor" ? (roomData?.patientId || "pat1") : (user?.uid || "pat1");
+    if (!targetPatientId) return;
 
     const deviceId = "oximeter_01";
-    const telemetryRef = ref(rtdb, `device_telemetry/${deviceId}`);
-    const unsubscribe = onValue(telemetryRef, (snapshot) => {
+    const paths = [
+      `device_telemetry/${deviceId}`,
+      `devices/${deviceId}`,
+      `telemetry/${deviceId}`,
+      `device_telemetry`,
+      `telemetry_vitals/${targetPatientId}`
+    ];
+
+    const handleData = (snapshot: any) => {
       const data = snapshot.val();
+      if (!data) return;
+
       if (data && (typeof data.spo2 === "number" || typeof data.heartRate === "number")) {
         const spo2Val = typeof data.spo2 === "number" ? data.spo2 : null;
         const hrVal = typeof data.heartRate === "number" ? data.heartRate : null;
         const tsVal = Date.now();
 
-        // Sync to local DB
+        setVitals((prev: any) => ({
+          ...prev,
+          ...(spo2Val !== null ? { spo2: spo2Val } : {}),
+          ...(hrVal !== null ? { heartRate: hrVal } : {}),
+          lastUpdated: new Date(tsVal).toISOString()
+        }));
+
         const dbInstance = getMediSyncDb();
-        const p = dbInstance.patients.find((x) => x.uid === user.uid);
+        const p = dbInstance.patients.find((x) => x.uid === targetPatientId);
         if (p) {
           if (spo2Val !== null) p.vitals.spo2 = spo2Val;
           if (hrVal !== null) p.vitals.heartRate = hrVal;
@@ -370,15 +394,17 @@ export default function ConsultationRoom() {
           saveMediSyncDb(dbInstance);
 
           const updatedVitals = { ...p.vitals };
-          setVitals(updatedVitals);
-
-          // Push vitals to Firestore so doctor can see live device data
-          writePatientVitalsToFirestore(user.uid, p.name, updatedVitals);
+          try {
+            set(ref(rtdb, `telemetry_vitals/${targetPatientId}`), updatedVitals);
+          } catch (e) {}
+          writePatientVitalsToFirestore(targetPatientId, p.name, updatedVitals);
         }
       }
-    });
-    return () => unsubscribe();
-  }, [role, user, roomId]);
+    };
+
+    const unsubs = paths.map((path) => onValue(ref(rtdb, path), handleData));
+    return () => unsubs.forEach((u) => u());
+  }, [role, user, roomId, roomData?.patientId]);
 
   // ─── Auto-scroll chat ─────────────────────────────────────────────────────
   useEffect(() => {
