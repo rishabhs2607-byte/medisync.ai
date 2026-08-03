@@ -156,6 +156,33 @@ export const useWebRTC = (): UseWebRTCReturn => {
     }
   };
 
+  const pendingCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
+
+  const addOrQueueIceCandidate = async (candidateData: RTCIceCandidateInit) => {
+    if (pcRef.current && pcRef.current.remoteDescription && pcRef.current.remoteDescription.type) {
+      try {
+        await pcRef.current.addIceCandidate(new RTCIceCandidate(candidateData));
+      } catch (e) {
+        console.warn("addIceCandidate error:", e);
+      }
+    } else {
+      pendingCandidatesRef.current.push(candidateData);
+    }
+  };
+
+  const processPendingIceCandidates = async () => {
+    if (!pcRef.current || !pcRef.current.remoteDescription) return;
+    const candidates = [...pendingCandidatesRef.current];
+    pendingCandidatesRef.current = [];
+    for (const cand of candidates) {
+      try {
+        await pcRef.current.addIceCandidate(new RTCIceCandidate(cand));
+      } catch (e) {
+        console.warn("addIceCandidate error while processing queue:", e);
+      }
+    }
+  };
+
   // ─── PEER CONNECTION ─────────────────────────────────────────────────────
   const createPeerConnection = (
     stream: MediaStream,
@@ -163,43 +190,39 @@ export const useWebRTC = (): UseWebRTCReturn => {
   ): RTCPeerConnection => {
     const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
 
-    // Add local tracks
+    // Add local tracks to peer connection
     stream.getTracks().forEach((track) => pc.addTrack(track, stream));
-    // Ensure video and audio transceivers are present for full bidirectional flow
-    try {
-      pc.addTransceiver('video', { direction: 'sendrecv' });
-      pc.addTransceiver('audio', { direction: 'sendrecv' });
-    } catch (e) {
-      console.warn('Transceiver addition failed:', e);
-    }
 
     pc.onicecandidate = (event) => {
       if (event.candidate) onIceCandidate(event.candidate);
     };
 
     pc.ontrack = (event) => {
-      setRemoteStream((prev) => {
-        const s = prev || new MediaStream();
-        // Avoid adding duplicate tracks
-        const existingIds = s.getTracks().map(t => t.id);
-        if (!existingIds.includes(event.track.id)) {
-          s.addTrack(event.track);
-        }
-        return s;
-      });
+      if (event.streams && event.streams[0]) {
+        setRemoteStream(event.streams[0]);
+      } else {
+        setRemoteStream((prev) => {
+          const s = prev || new MediaStream();
+          const existingIds = s.getTracks().map((t) => t.id);
+          if (!existingIds.includes(event.track.id)) {
+            s.addTrack(event.track);
+          }
+          return s;
+        });
+      }
     };
 
     pc.onconnectionstatechange = () => {
       if (pc.connectionState === "connected") setCallStatus("connected");
-      if (pc.connectionState === "disconnected" || pc.connectionState === "failed")
-        setCallStatus("ended");
+      if (pc.connectionState === "disconnected" || pc.connectionState === "failed") {
+        console.warn("WebRTC connection state changed:", pc.connectionState);
+      }
     };
 
     pc.oniceconnectionstatechange = () => {
-      if (pc.iceConnectionState === "connected" || pc.iceConnectionState === "completed")
+      if (pc.iceConnectionState === "connected" || pc.iceConnectionState === "completed") {
         setCallStatus("connected");
-      if (pc.iceConnectionState === "disconnected" || pc.iceConnectionState === "failed")
-        setCallStatus("ended");
+      }
     };
 
     pcRef.current = pc;
@@ -210,6 +233,7 @@ export const useWebRTC = (): UseWebRTCReturn => {
   const startCall = useCallback(
     async (patientId: string, patientName: string, existingRoomId?: string): Promise<string> => {
       setError(null);
+      pendingCandidatesRef.current = [];
       const stream = await getUserMedia();
 
       const roomRef = existingRoomId ? doc(firestoreDb, "rooms", existingRoomId) : doc(collection(firestoreDb, "rooms"));
@@ -252,6 +276,7 @@ export const useWebRTC = (): UseWebRTCReturn => {
         if (data?.answer && pc.signalingState !== "stable") {
           try {
             await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+            await processPendingIceCandidates();
             setCallStatus("connecting");
           } catch (e) {
             console.warn("setRemoteDescription error:", e);
@@ -260,13 +285,9 @@ export const useWebRTC = (): UseWebRTCReturn => {
       });
 
       const unsub2 = onSnapshot(calleeCandidates, (snap) => {
-        snap.docChanges().forEach(async (change) => {
+        snap.docChanges().forEach((change) => {
           if (change.type === "added") {
-            try {
-              await pc.addIceCandidate(new RTCIceCandidate(change.doc.data()));
-            } catch (e) {
-              console.warn("addIceCandidate error:", e);
-            }
+            addOrQueueIceCandidate(change.doc.data() as RTCIceCandidateInit);
           }
         });
       });
@@ -282,6 +303,7 @@ export const useWebRTC = (): UseWebRTCReturn => {
     async (targetRoomId: string, doctorId: string, doctorName: string): Promise<void> => {
       setError(null);
       setCallStatus("joining");
+      pendingCandidatesRef.current = [];
 
       const stream = await getUserMedia();
       const roomRef = doc(firestoreDb, "rooms", targetRoomId);
@@ -310,6 +332,7 @@ export const useWebRTC = (): UseWebRTCReturn => {
       });
 
       await pc.setRemoteDescription(new RTCSessionDescription(roomData.offer));
+      await processPendingIceCandidates();
 
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
@@ -326,13 +349,9 @@ export const useWebRTC = (): UseWebRTCReturn => {
 
       const callerCandidates = collection(roomRef, "callerCandidates");
       const unsub = onSnapshot(callerCandidates, (snap) => {
-        snap.docChanges().forEach(async (change) => {
+        snap.docChanges().forEach((change) => {
           if (change.type === "added") {
-            try {
-              await pc.addIceCandidate(new RTCIceCandidate(change.doc.data()));
-            } catch (e) {
-              console.warn("addIceCandidate error:", e);
-            }
+            addOrQueueIceCandidate(change.doc.data() as RTCIceCandidateInit);
           }
         });
       });
