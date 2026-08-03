@@ -144,27 +144,34 @@ export default function ConsultationRoom() {
     };
   }, [roomId]);
 
+  const callInitiatedRef = useRef(false);
+
   // ─── Stream Video Element Attachment & WebRTC Call Initiation ──────────────
   useEffect(() => {
     if (localVideoRef.current && localStream) {
       localVideoRef.current.srcObject = localStream;
+      localVideoRef.current.play().catch(() => {});
     }
   }, [localStream]);
 
   useEffect(() => {
     if (remoteVideoRef.current && remoteStream) {
       remoteVideoRef.current.srcObject = remoteStream;
+      remoteVideoRef.current.play().catch((err) => {
+        console.warn("Remote video play error:", err);
+      });
     }
   }, [remoteStream]);
 
   useEffect(() => {
-    if (!roomId || !user) return;
+    if (!roomId || !user || callInitiatedRef.current) return;
+    callInitiatedRef.current = true;
     if (role === "doctor") {
       joinCall(roomId, user.uid, user.name);
     } else {
       startCall(user.uid, user.name, roomId);
     }
-  }, [roomId, user, role]);
+  }, [roomId, user, role, joinCall, startCall]);
 
   // ─── Realtime RTDB & Firestore Patient Vitals Subscription ────────────────────────
   useEffect(() => {
@@ -449,7 +456,7 @@ export default function ConsultationRoom() {
 
   const isConnected = callStatus === "connected";
   const isWaiting = callStatus === "waiting-for-doctor";
-  const hasRemote = !!remoteStream;
+  const hasRemote = !!remoteStream && remoteStream.getTracks().length > 0;
 
   useEffect(() => {
   if (callStatus === "ended" || callStatus === "error") {

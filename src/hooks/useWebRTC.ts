@@ -163,8 +163,14 @@ export const useWebRTC = (): UseWebRTCReturn => {
   };
 
   const pendingCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
+  const processedCandidatesRef = useRef<Set<string>>(new Set());
 
   const addOrQueueIceCandidate = async (candidateData: RTCIceCandidateInit) => {
+    if (!candidateData || !candidateData.candidate) return;
+    const candKey = `${candidateData.candidate}_${candidateData.sdpMid}_${candidateData.sdpMLineIndex}`;
+    if (processedCandidatesRef.current.has(candKey)) return;
+    processedCandidatesRef.current.add(candKey);
+
     if (pcRef.current && pcRef.current.remoteDescription && pcRef.current.remoteDescription.type) {
       try {
         await pcRef.current.addIceCandidate(new RTCIceCandidate(candidateData));
@@ -201,19 +207,17 @@ export const useWebRTC = (): UseWebRTCReturn => {
 
     pc.ontrack = (event) => {
       console.log("WebRTC ontrack received:", event.track.kind, event.track.id);
-      const incomingStream = event.streams && event.streams[0] ? event.streams[0] : null;
-
-      setRemoteStream((prev) => {
-        if (incomingStream) {
-          return new MediaStream(incomingStream.getTracks());
-        }
-        const currentTracks = prev ? prev.getTracks() : [];
-        const existingIds = currentTracks.map((t) => t.id);
-        if (!existingIds.includes(event.track.id)) {
-          return new MediaStream([...currentTracks, event.track]);
-        }
-        return new MediaStream(currentTracks);
-      });
+      if (event.streams && event.streams[0]) {
+        setRemoteStream(event.streams[0]);
+      } else {
+        setRemoteStream((prev) => {
+          const existingTracks = prev ? prev.getTracks() : [];
+          if (!existingTracks.some((t) => t.id === event.track.id)) {
+            return new MediaStream([...existingTracks, event.track]);
+          }
+          return prev || new MediaStream([event.track]);
+        });
+      }
     };
 
     pc.onconnectionstatechange = () => {
