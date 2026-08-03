@@ -198,18 +198,20 @@ export const useWebRTC = (): UseWebRTCReturn => {
     };
 
     pc.ontrack = (event) => {
-      if (event.streams && event.streams[0]) {
-        setRemoteStream(event.streams[0]);
-      } else {
-        setRemoteStream((prev) => {
-          const s = prev || new MediaStream();
-          const existingIds = s.getTracks().map((t) => t.id);
-          if (!existingIds.includes(event.track.id)) {
-            s.addTrack(event.track);
-          }
-          return s;
-        });
-      }
+      console.log("WebRTC ontrack received:", event.track.kind, event.track.id);
+      const incomingStream = event.streams && event.streams[0] ? event.streams[0] : null;
+
+      setRemoteStream((prev) => {
+        if (incomingStream) {
+          return new MediaStream(incomingStream.getTracks());
+        }
+        const currentTracks = prev ? prev.getTracks() : [];
+        const existingIds = currentTracks.map((t) => t.id);
+        if (!existingIds.includes(event.track.id)) {
+          return new MediaStream([...currentTracks, event.track]);
+        }
+        return new MediaStream(currentTracks);
+      });
     };
 
     pc.onconnectionstatechange = () => {

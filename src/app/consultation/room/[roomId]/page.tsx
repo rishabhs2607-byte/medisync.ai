@@ -116,16 +116,19 @@ const [loadingVitals, setLoadingVitals] = useState<boolean>(true);
 
   // Ensure remote video plays when remote stream changes
   useEffect(() => {
-    if (remoteVideoRef.current && remoteStream) {
-      remoteVideoRef.current.srcObject = remoteStream;
-      remoteVideoRef.current.play().catch(() => {});
+    const videoEl = remoteVideoRef.current;
+    if (!videoEl || !remoteStream) return;
+
+    if (videoEl.srcObject !== remoteStream) {
+      videoEl.srcObject = remoteStream;
     }
-    // Cleanup on unmount or stream change
-    return () => {
-      if (remoteVideoRef.current) {
-        remoteVideoRef.current.srcObject = null;
-      }
+
+    const handlePlay = () => {
+      videoEl.play().catch((err) => console.warn("Remote video play warning:", err));
     };
+
+    handlePlay();
+    videoEl.onloadedmetadata = handlePlay;
   }, [remoteStream]);
 
   // Cleanup Firestore listeners when the call ends (prevents resource‑exhausted errors)
