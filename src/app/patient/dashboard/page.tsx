@@ -9,7 +9,7 @@ import {
 } from "@/services/firebase";
 import { useAuth } from "@/context/AuthContext";
 import { useWebRTC } from "@/hooks/useWebRTC";
-import { ref, onValue } from "firebase/database";
+import { ref, onValue, set } from "firebase/database";
 import { collection, query, where, onSnapshot } from "firebase/firestore";
 import { analyzeVitals } from "@/services/aiEngine";
 import IoTSimulator from "@/components/IoTSimulator";
@@ -86,27 +86,59 @@ export default function PatientDashboard() {
   // Firebase RTDB listener for IoT thermometer
   useEffect(() => {
     if (!rtdb) return;
+
+    // Load initial temperature from DB if available
+    const dbInst = getMediSyncDb();
+    const initP = dbInst.patients.find(x => x.uid === patientId);
+    if (initP && initP.vitals && typeof initP.vitals.temperature === "number") {
+      setLiveTemp(initP.vitals.temperature);
+      if (initP.vitals.lastUpdated) {
+        const initTs = new Date(initP.vitals.lastUpdated).getTime();
+        if (!isNaN(initTs)) setLiveTimestamp(initTs);
+      }
+    }
+
     const deviceId = "thermometer_01";
-    const telemetryRef = ref(rtdb, `device_telemetry/${deviceId}`);
-    const unsubscribe = onValue(telemetryRef, (snapshot) => {
+    const paths = [`device_telemetry/${deviceId}`, `devices/${deviceId}`, `telemetry/${deviceId}`];
+    
+    const handleData = (snapshot: any) => {
       const data = snapshot.val();
-      if (data && typeof data.temperature === "number") {
-        const tempVal = data.temperature;
-        const tsVal = Date.now(); // Always use local browser time to avoid ESP8266 NTP sync issues
+      if (!data) return;
+
+      const rawTemp = data.temperature ?? data.temp ?? data.val ?? data.value ?? data.t;
+      let tempVal: number | null = null;
+      if (typeof rawTemp === "number") {
+        tempVal = rawTemp;
+      } else if (typeof rawTemp === "string") {
+        const parsed = parseFloat(rawTemp);
+        if (!isNaN(parsed)) tempVal = parsed;
+      }
+
+      if (tempVal !== null) {
+        // Convert Celsius (30 - 45 °C) to Fahrenheit
+        if (tempVal >= 30 && tempVal <= 45) {
+          tempVal = parseFloat(((tempVal * 9) / 5 + 32).toFixed(1));
+        } else {
+          tempVal = parseFloat(tempVal.toFixed(1));
+        }
+
+        const tsVal = Date.now();
         const rssiVal = typeof data.rssi === "number" ? data.rssi : null;
+
         setLiveTemp(tempVal);
         setLiveTimestamp(tsVal);
-        setLiveRssi(rssiVal);
+        if (rssiVal !== null) setLiveRssi(rssiVal);
         setTempHistory((prev) => {
-          const next = [...prev, tempVal];
+          const next = [...prev, tempVal!];
           if (next.length > 12) next.shift();
           return next;
         });
+
         // Sync to local DB
         const dbInstance = getMediSyncDb();
         const p = dbInstance.patients.find(x => x.uid === patientId);
         if (p) {
-          p.vitals.temperature = parseFloat(tempVal.toFixed(1));
+          p.vitals.temperature = tempVal;
           p.vitals.lastUpdated = new Date(tsVal).toISOString();
           if (p.connectedDevice) {
             p.connectedDevice.deviceId = deviceId;
@@ -117,12 +149,18 @@ export default function PatientDashboard() {
           }
           saveMediSyncDb(dbInstance);
           loadDb();
-          // Push vitals to Firestore so doctor can see live device data
+
+          // Push vitals to RTDB & Firestore so doctor can see live device data
+          try {
+            set(ref(rtdb, `telemetry_vitals/${patientId}`), p.vitals);
+          } catch (e) {}
           writePatientVitalsToFirestore(patientId, p.name, p.vitals);
         }
       }
-    });
-    return () => unsubscribe();
+    };
+
+    const unsubs = paths.map((path) => onValue(ref(rtdb, path), handleData));
+    return () => unsubs.forEach((u) => u());
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [patientId]);
 
