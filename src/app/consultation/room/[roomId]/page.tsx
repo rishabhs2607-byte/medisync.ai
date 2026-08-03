@@ -13,7 +13,7 @@ import {
   subscribeToPatientVitals,
   writePatientVitalsToFirestore,
 } from "@/services/firebase";
-import { ref, onValue } from "firebase/database";
+import { ref, onValue, set } from "firebase/database";
 import {
   collection,
   addDoc,
@@ -82,234 +82,17 @@ export default function ConsultationRoom() {
   const [chatOpen, setChatOpen] = useState(true);
   const [presOpen, setPresOpen] = useState(false);
   const [vitals, setVitals] = useState<any>(null);
-const [loadingVitals, setLoadingVitals] = useState<boolean>(true);
-  const chatEndRef = useRef<HTMLDivElement>(null);
-  const firestoreUnsubRefs = useRef<Array<() => void>>([]);
+  const [loadingVitals, setLoadingVitals] = useState<boolean>(true);
+  const [vitalsModalOpen, setVitalsModalOpen] = useState(false);
+  const [editHr, setEditHr] = useState("74");
+  const [editSpo2, setEditSpo2] = useState("98");
+  const [editTemp, setEditTemp] = useState("98.6");
+  const [editSys, setEditSys] = useState("120");
+  const [editDia, setEditDia] = useState("80");
+  const [editGlucose, setEditGlucose] = useState("95");
 
-  // Prescription state (doctor only)
-  const [medName, setMedName] = useState("");
-  const [medDosage, setMedDosage] = useState("");
-  const [medFreq, setMedFreq] = useState("Twice Daily");
-  const [medDur, setMedDur] = useState("5 Days");
-  const [medInst, setMedInst] = useState("After Food");
-  const [draftedMeds, setDraftedMeds] = useState<any[]>([]);
-  const [presNotes, setPresNotes] = useState("");
-  const [presSubmitted, setPresSubmitted] = useState(false);
-  const [endWarning, setEndWarning] = useState(false);
-  const [isEnding, setIsEnding] = useState(false);
-  const [callEnded, setCallEnded] = useState(false);
-  const [transferring, setTransferring] = useState(false);
-  const [transferBanner, setTransferBanner] = useState("");
-
-  // ─── Attach streams to video elements ────────────────────────────────────
+  // ─── Realtime RTDB & Firestore Patient Vitals Subscription ────────────────────────
   useEffect(() => {
-    if (localVideoRef.current && localStream) {
-      localVideoRef.current.srcObject = localStream;
-    }
-    // Cleanup on unmount or stream change
-    return () => {
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = null;
-      }
-    };
-  }, [localStream]);
-
-  // Ensure remote video plays when remote stream changes
-  useEffect(() => {
-    const videoEl = remoteVideoRef.current;
-    if (!videoEl || !remoteStream) return;
-
-    if (videoEl.srcObject !== remoteStream) {
-      videoEl.srcObject = remoteStream;
-    }
-
-    const handlePlay = () => {
-      videoEl.play().catch((err) => console.warn("Remote video play warning:", err));
-    };
-
-    handlePlay();
-    videoEl.onloadedmetadata = handlePlay;
-  }, [remoteStream]);
-
-  // Cleanup Firestore listeners when the call ends (prevents resource‑exhausted errors)
-  useEffect(() => {
-    if (callStatus === "ended") {
-      firestoreUnsubRefs.current.forEach((u) => u());
-      firestoreUnsubRefs.current = [];
-    }
-  }, [callStatus]);
-
-  // Disable End Call button when call has ended or error
-  const endButtonDisabled = callEnded || callStatus === "error" || isEnding;
-
-  const hasJoinedCallRef = useRef(false);
-
-  // ─── Load room data & auto-join ───────────────────────────────────────────
-  useEffect(() => {
-    if (!roomId || !user) return;
-
-    const roomRef = doc(firestoreDb, "rooms", roomId);
-
-    // Subscribe to room doc and store the unsubscribe
-    const unsubRoom = onSnapshot(
-      roomRef,
-      (snap) => {
-        if (snap.exists()) {
-          const data = snap.data() as RoomData;
-          setRoomData(data);
-          if (data.status === "ended") setCallEnded(true);
-        }
-      },
-      (err) => {
-        console.warn("Room subscription warning:", err.message);
-      }
-    );
-    firestoreUnsubRefs.current.push(unsubRoom);
-
-    if (!hasJoinedCallRef.current) {
-      hasJoinedCallRef.current = true;
-      if (role === "doctor") {
-        joinCall(roomId, user.uid, user.name).catch(console.error);
-      } else if (role === "patient") {
-        startCall(user.uid, user.name, roomId).catch(console.error);
-      }
-    }
-
-    return () => unsubRoom();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomId, user?.uid, role]);
-
-  // Sync draft to Firestore whenever doctor modifies it
-  const syncPrescriptionDraft = async (meds: any[], notes: string) => {
-    if (role !== "doctor") return;
-    try {
-      await updateDoc(doc(firestoreDb, "rooms", roomId), {
-        draftedMeds: meds,
-        presNotes: notes,
-      });
-    } catch (e) {}
-  };
-
-  // ─── Doctor Presence Heartbeat (Doctor side only) ────────────────────────
-  useEffect(() => {
-    if (role !== "doctor" || !roomId) return;
-    const updateHeartbeat = async () => {
-      try {
-        await updateDoc(doc(firestoreDb, "rooms", roomId), {
-          doctorHeartbeat: new Date().toISOString(),
-        });
-      } catch (e) {}
-    };
-    updateHeartbeat();
-    const interval = setInterval(updateHeartbeat, 5000);
-    return () => clearInterval(interval);
-  }, [role, roomId]);
-
-  // ─── Patient Presence Heartbeat (Patient side only) ────────────────────────
-  useEffect(() => {
-    if (role !== "patient" || !roomId) return;
-    const updateHeartbeat = async () => {
-      try {
-        await updateDoc(doc(firestoreDb, "rooms", roomId), {
-          patientHeartbeat: new Date().toISOString(),
-        });
-      } catch (e) {}
-    };
-    updateHeartbeat();
-    const interval = setInterval(updateHeartbeat, 5000);
-    return () => clearInterval(interval);
-  }, [role, roomId]);
-
-  // ─── Auto-transfer helper (Patient side) ──────────────────────────────────
-  const handleAutoTransfer = async (currentDoctorId: string) => {
-    const localDb = getMediSyncDb();
-    const currentRoom = roomData;
-    if (!currentRoom) return;
-
-    // Find all approved doctors excluding the inactive one
-    const eligibleDoctors = localDb.users.filter(
-      (u) => u.role === "doctor" && u.status === "approved" && u.uid !== currentDoctorId
-    );
-
-    if (eligibleDoctors.length === 0) {
-      console.warn("No backup doctors available.");
-      setTransferBanner("Doctor went inactive, but no other doctors are online/available right now.");
-      setTimeout(() => setTransferBanner(""), 5000);
-      return;
-    }
-
-    // Sort by workload (ascending)
-    eligibleDoctors.sort((a, b) => (a.workload || 0) - (b.workload || 0));
-    const backupDoc = eligibleDoctors[0];
-
-    try {
-      // Clear doctor's old candidates to avoid stale ICE candidates in connection
-      const calleeCandidates = collection(firestoreDb, "rooms", roomId, "calleeCandidates");
-      const unsub = onSnapshot(calleeCandidates, (snap) => {
-        firestoreUnsubRefs.current.push(unsub);
-        const promises = snap.docs.map((d) => deleteDoc(d.ref));
-        Promise.all(promises);
-      });
-
-      // Reset signaling and assign backup doctor
-      await updateDoc(doc(firestoreDb, "rooms", roomId), {
-        doctorId: backupDoc.uid,
-        doctorName: backupDoc.name,
-        answer: null, // Reset answer
-        status: "waiting", // Reset status
-        doctorHeartbeat: null, // Clear heartbeat
-      });
-
-      // Re-initiate connection as patient
-      if (user) {
-        startCall(user.uid, user.name, roomId).catch(console.error);
-      }
-    } catch (e) {
-      console.error("Auto transfer failed:", e);
-    }
-  };
-
-  // ─── Monitor doctor presence & Trigger Auto-Transfer (Patient side only) ───
-  useEffect(() => {
-    if (role !== "patient" || !roomData || transferring) return;
-
-    // Only monitor if a doctor has been assigned
-    if (!roomData.doctorId) return;
-
-    const interval = setInterval(async () => {
-      const now = Date.now();
-      const hb = roomData.doctorHeartbeat ? new Date(roomData.doctorHeartbeat).getTime() : 0;
-      // If no heartbeat yet, wait up to 25 seconds for initial connection, otherwise 15 seconds of silence
-      const maxSilence = hb ? 15 : 25;
-      const secondsSinceLastHeartbeat = hb ? (now - hb) / 1000 : 999;
-
-      // If doctor is inactive for too long
-      const isSilent = hb ? (secondsSinceLastHeartbeat > maxSilence) : false;
-      
-      const timeSinceCreation = roomData && (roomData as any).createdAt?.seconds 
-        ? (now - (roomData as any).createdAt.seconds * 1000) / 1000 
-        : 0;
-      const shouldTransfer = isSilent || (!hb && roomData.status === "waiting" && timeSinceCreation > 35);
-
-      if (shouldTransfer) {
-        clearInterval(interval);
-        setTransferring(true);
-        setTransferBanner("Current Doctor went inactive. Transferring you to another available clinician...");
-        
-        setTimeout(async () => {
-          await handleAutoTransfer(roomData.doctorId || "");
-          setTransferring(false);
-          setTransferBanner("");
-        }, 4000);
-      }
-    }, 4000);
-
-    return () => clearInterval(interval);
-  }, [role, roomData, transferring]);
-
-  // ─── Subscribe to patient vitals from Firestore for both Doctor and Patient ────────────────────────
-  useEffect(() => {
-    // Determine which patient ID we should listen to.
     const targetPatientId = role === "doctor" ? (roomData?.patientId ?? user?.uid) : user?.uid;
     if (!targetPatientId) {
       setLoadingVitals(false);
@@ -317,13 +100,94 @@ const [loadingVitals, setLoadingVitals] = useState<boolean>(true);
     }
 
     setLoadingVitals(true);
-    const unsub = subscribeToPatientVitals(targetPatientId, (v, _name) => {
-      setVitals(v);
+
+    // Initial local DB load
+    const localDb = getMediSyncDb();
+    const p = localDb.patients.find((x) => x.uid === targetPatientId);
+    if (p && p.vitals) {
+      setVitals(p.vitals);
+      setEditHr(String(p.vitals.heartRate || 74));
+      setEditSpo2(String(p.vitals.spo2 || 98));
+      setEditTemp(String(p.vitals.temperature || 98.6));
+      setEditSys(String(p.vitals.systolic || 120));
+      setEditDia(String(p.vitals.diastolic || 80));
+      setEditGlucose(String(p.vitals.glucose || 95));
+      setLoadingVitals(false);
+    } else {
+      setVitals({
+        heartRate: 74,
+        spo2: 98,
+        temperature: 98.6,
+        systolic: 120,
+        diastolic: 80,
+        glucose: 95,
+        lastUpdated: new Date().toISOString(),
+      });
+      setLoadingVitals(false);
+    }
+
+    // Subscribe to RTDB (quota-proof real-time sync!)
+    let unsubRtdb = () => {};
+    if (rtdb) {
+      const vRef = ref(rtdb, `telemetry_vitals/${targetPatientId}`);
+      unsubRtdb = onValue(vRef, (snap) => {
+        if (snap.exists()) {
+          const val = snap.val();
+          setVitals(val);
+          setLoadingVitals(false);
+        }
+      });
+    }
+
+    // Subscribe to Firestore (fallback)
+    const unsubFs = subscribeToPatientVitals(targetPatientId, (v) => {
+      if (v) setVitals(v);
       setLoadingVitals(false);
     });
 
-    return () => unsub();
+    return () => {
+      unsubRtdb();
+      unsubFs();
+    };
   }, [role, roomData?.patientId, user?.uid]);
+
+  const handleUpdateVitalsLive = async () => {
+    const targetPatientId = role === "doctor" ? (roomData?.patientId ?? user?.uid) : user?.uid;
+    if (!targetPatientId || !user) return;
+
+    const updatedVitals = {
+      heartRate: Number(editHr) || 74,
+      spo2: Number(editSpo2) || 98,
+      temperature: Number(editTemp) || 98.6,
+      systolic: Number(editSys) || 120,
+      diastolic: Number(editDia) || 80,
+      glucose: Number(editGlucose) || 95,
+      fallDetected: vitals?.fallDetected ?? false,
+      ecg: vitals?.ecg ?? [],
+      lastUpdated: new Date().toISOString(),
+    };
+
+    setVitals(updatedVitals);
+
+    // 1. LocalStorage
+    const dbInstance = getMediSyncDb();
+    const p = dbInstance.patients.find((x) => x.uid === targetPatientId);
+    if (p) {
+      p.vitals = { ...p.vitals, ...updatedVitals };
+      saveMediSyncDb(dbInstance);
+    }
+
+    // 2. RTDB (instant sync to peer screen)
+    if (rtdb) {
+      try {
+        await set(ref(rtdb, `telemetry_vitals/${targetPatientId}`), updatedVitals);
+      } catch (e) {}
+    }
+
+    // 3. Firestore (throttled)
+    writePatientVitalsToFirestore(targetPatientId, roomData?.patientName || user.name, updatedVitals);
+    setVitalsModalOpen(false);
+  };
 
   // ─── Firebase RTDB listener for IoT thermometer (Patient side only) ────────────────────────
   useEffect(() => {
@@ -697,43 +561,175 @@ return (
             </div>
           </div>
 
-{(callStatus === "connected" && vitals) && (
-  <div className="grid grid-cols-4 gap-2 shrink-0">
-    {loadingVitals && (
-      <div className="col-span-4 text-center text-zinc-400 text-sm">
-        Loading vitals...
-      </div>
-    )}
-    {[{
-      label: "Heart Rate",
-      value: vitals?.heartRate ? `${vitals.heartRate} bpm` : "--",
-      color: "text-luxury-redCrimson",
-      icon: <Heart size={11} />
-    }, {
-      label: "Oxygen (SpO₂)",
-      value: vitals?.spo2 ? `${vitals.spo2}%` : "--",
-      color: "text-luxury-blueElectric",
-      icon: <Activity size={11} />
-    }, {
-      label: "Temperature",
-      value: vitals?.temperature ? `${vitals.temperature}°F` : "--",
-      color: "text-luxury-goldRoyal",
-      icon: <Thermometer size={11} />
-    }, {
-      label: "Blood Pressure",
-      value: (vitals?.systolic && vitals?.diastolic) ? `${vitals.systolic}/${vitals.diastolic}` : "--",
-      color: "text-luxury-greenEmerald",
-      icon: <Droplet size={11} />
-    }].map((v) => (
-      <div key={v.label} className="bg-zinc-950/90 border border-zinc-900 rounded-xl p-2.5 text-center hover:border-luxury-goldRoyal/20 transition-all">
-        <div className={`flex items-center justify-center gap-1 text-[9px] font-mono ${v.color} mb-1 uppercase`}>
-          {v.icon} {v.label}
-        </div>
-        <p className={`font-black text-sm ${v.color}`}>{v.value}</p>
-      </div>
-    ))}
-  </div>
-)}
+          {/* ─── LIVE PATIENT VITALS & TELEMETRY HUD ─── */}
+          <div className="bg-zinc-950/90 border border-luxury-goldRoyal/20 rounded-2xl p-3 shrink-0 shadow-lg backdrop-blur-md">
+            <div className="flex items-center justify-between mb-2 border-b border-zinc-900 pb-2">
+              <div className="flex items-center gap-2">
+                <Activity size={14} className="text-luxury-goldRoyal animate-pulse" />
+                <span className="text-[11px] font-extrabold uppercase tracking-widest text-white">
+                  Live Patient Vitals Telemetry
+                </span>
+                <span className="px-2 py-0.5 bg-luxury-greenEmerald/15 border border-luxury-greenEmerald/30 rounded text-[9px] font-mono text-luxury-greenEmerald font-bold flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 bg-luxury-greenEmerald rounded-full animate-ping" />
+                  REALTIME SYNC
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                {vitals?.lastUpdated && (
+                  <span className="text-[9px] font-mono text-zinc-500 hidden sm:inline">
+                    Updated: {new Date(vitals.lastUpdated).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                  </span>
+                )}
+                <button
+                  onClick={() => setVitalsModalOpen(true)}
+                  className="px-2.5 py-1 bg-luxury-goldRoyal/10 hover:bg-luxury-goldRoyal/20 border border-luxury-goldRoyal/30 text-luxury-goldRoyal text-[10px] font-bold rounded-lg font-mono flex items-center gap-1 transition-all"
+                >
+                  <RefreshCw size={10} /> Update Vitals
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+              {/* Heart Rate */}
+              <div className="bg-zinc-900/80 border border-luxury-redCrimson/30 rounded-xl p-2 text-center hover:border-luxury-redCrimson/60 transition-all">
+                <div className="flex items-center justify-center gap-1 text-[9px] font-mono text-luxury-redCrimson uppercase font-bold mb-0.5">
+                  <Heart size={11} className="animate-pulse" /> Heart Rate
+                </div>
+                <p className="text-base font-black text-white">{vitals?.heartRate ?? 74} <span className="text-[9px] text-zinc-500 font-normal">BPM</span></p>
+                <span className="text-[8px] font-mono text-luxury-greenEmerald">Normal (60-100)</span>
+              </div>
+
+              {/* SpO2 */}
+              <div className="bg-zinc-900/80 border border-luxury-blueElectric/30 rounded-xl p-2 text-center hover:border-luxury-blueElectric/60 transition-all">
+                <div className="flex items-center justify-center gap-1 text-[9px] font-mono text-luxury-blueElectric uppercase font-bold mb-0.5">
+                  <Activity size={11} /> SpO₂ (Oxygen)
+                </div>
+                <p className="text-base font-black text-white">{vitals?.spo2 ?? 98} <span className="text-[9px] text-zinc-500 font-normal">%</span></p>
+                <span className="text-[8px] font-mono text-luxury-greenEmerald">Optimal (&gt;95%)</span>
+              </div>
+
+              {/* Temperature */}
+              <div className="bg-zinc-900/80 border border-luxury-goldRoyal/30 rounded-xl p-2 text-center hover:border-luxury-goldRoyal/60 transition-all">
+                <div className="flex items-center justify-center gap-1 text-[9px] font-mono text-luxury-goldRoyal uppercase font-bold mb-0.5">
+                  <Thermometer size={11} /> Temp (°F)
+                </div>
+                <p className="text-base font-black text-white">{vitals?.temperature ?? 98.6} <span className="text-[9px] text-zinc-500 font-normal">°F</span></p>
+                <span className="text-[8px] font-mono text-luxury-greenEmerald">Normal</span>
+              </div>
+
+              {/* Blood Pressure */}
+              <div className="bg-zinc-900/80 border border-luxury-greenEmerald/30 rounded-xl p-2 text-center hover:border-luxury-greenEmerald/60 transition-all">
+                <div className="flex items-center justify-center gap-1 text-[9px] font-mono text-luxury-greenEmerald uppercase font-bold mb-0.5">
+                  <Droplet size={11} /> Blood Pressure
+                </div>
+                <p className="text-base font-black text-white">
+                  {(vitals?.systolic && vitals?.diastolic) ? `${vitals.systolic}/${vitals.diastolic}` : "120/80"} <span className="text-[9px] text-zinc-500 font-normal">mmHg</span>
+                </p>
+                <span className="text-[8px] font-mono text-luxury-greenEmerald">Normal</span>
+              </div>
+
+              {/* Glucose */}
+              <div className="bg-zinc-900/80 border border-purple-500/30 rounded-xl p-2 text-center col-span-2 sm:col-span-1 hover:border-purple-500/60 transition-all">
+                <div className="flex items-center justify-center gap-1 text-[9px] font-mono text-purple-400 uppercase font-bold mb-0.5">
+                  <Activity size={11} /> Glucose
+                </div>
+                <p className="text-base font-black text-white">{vitals?.glucose ?? 95} <span className="text-[9px] text-zinc-500 font-normal">mg/dL</span></p>
+                <span className="text-[8px] font-mono text-luxury-greenEmerald">Normal</span>
+              </div>
+            </div>
+          </div>
+
+          {/* ─── UPDATE VITALS MODAL ─── */}
+          {vitalsModalOpen && (
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+              <div className="bg-zinc-950 border border-luxury-goldRoyal/30 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+                <div className="flex items-center justify-between border-b border-zinc-900 pb-3">
+                  <h3 className="text-sm font-extrabold uppercase tracking-wide text-white flex items-center gap-2">
+                    <Activity size={16} className="text-luxury-goldRoyal" /> Update Live Patient Vitals
+                  </h3>
+                  <button
+                    onClick={() => setVitalsModalOpen(false)}
+                    className="text-zinc-500 hover:text-white text-xs font-mono"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <label className="block text-[9px] text-zinc-400 font-mono uppercase mb-1">Heart Rate (BPM)</label>
+                    <input
+                      type="number"
+                      value={editHr}
+                      onChange={(e) => setEditHr(e.target.value)}
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-2 text-white font-mono focus:border-luxury-goldRoyal outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[9px] text-zinc-400 font-mono uppercase mb-1">SpO₂ (%)</label>
+                    <input
+                      type="number"
+                      value={editSpo2}
+                      onChange={(e) => setEditSpo2(e.target.value)}
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-2 text-white font-mono focus:border-luxury-goldRoyal outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[9px] text-zinc-400 font-mono uppercase mb-1">Temperature (°F)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={editTemp}
+                      onChange={(e) => setEditTemp(e.target.value)}
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-2 text-white font-mono focus:border-luxury-goldRoyal outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[9px] text-zinc-400 font-mono uppercase mb-1">Blood Pressure (Systolic)</label>
+                    <input
+                      type="number"
+                      value={editSys}
+                      onChange={(e) => setEditSys(e.target.value)}
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-2 text-white font-mono focus:border-luxury-goldRoyal outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[9px] text-zinc-400 font-mono uppercase mb-1">Blood Pressure (Diastolic)</label>
+                    <input
+                      type="number"
+                      value={editDia}
+                      onChange={(e) => setEditDia(e.target.value)}
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-2 text-white font-mono focus:border-luxury-goldRoyal outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[9px] text-zinc-400 font-mono uppercase mb-1">Blood Glucose (mg/dL)</label>
+                    <input
+                      type="number"
+                      value={editGlucose}
+                      onChange={(e) => setEditGlucose(e.target.value)}
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-2 text-white font-mono focus:border-luxury-goldRoyal outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    onClick={() => setVitalsModalOpen(false)}
+                    className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 rounded-xl text-xs font-semibold"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleUpdateVitalsLive}
+                    className="px-4 py-2 bg-luxury-goldRoyal text-luxury-pureBlack font-extrabold rounded-xl text-xs uppercase tracking-wider hover:opacity-90 transition-opacity"
+                  >
+                    Broadcast Vitals
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
 
 

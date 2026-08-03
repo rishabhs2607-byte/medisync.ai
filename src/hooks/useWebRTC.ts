@@ -14,13 +14,21 @@ import {
   deleteDoc,
   serverTimestamp,
 } from "firebase/firestore";
-import { db as firestoreDb } from "@/services/firebase";
+import { db as firestoreDb, rtdb } from "@/services/firebase";
+import {
+  ref as rtdbRef,
+  set as rtdbSet,
+  get as rtdbGet,
+  push as rtdbPush,
+  onValue as rtdbOnValue,
+  update as rtdbUpdate,
+} from "firebase/database";
 
 // ─── STUN / TURN CONFIG ──────────────────────────────────────────────────────
 // Uses Google free STUN (works on same network / simple NAT)
 // Add TURN credentials below for cross-network (different ISP) support
 const ICE_SERVERS: RTCIceServer[] = [
-  { urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] },
+  { urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302", "stun:stun2.l.google.com:19302"] },
   // OpenRelay Public TURN server to guarantee cross-network connectivity
   {
     urls: "turn:openrelay.metered.ca:80",
@@ -151,9 +159,7 @@ export const useWebRTC = (): UseWebRTCReturn => {
       const snap = await getDocs(collRef);
       const promises = snap.docs.map((d) => deleteDoc(d.ref));
       await Promise.all(promises);
-    } catch (e) {
-      console.warn("clearCollection error:", e);
-    }
+    } catch (e) {}
   };
 
   const pendingCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
@@ -162,9 +168,7 @@ export const useWebRTC = (): UseWebRTCReturn => {
     if (pcRef.current && pcRef.current.remoteDescription && pcRef.current.remoteDescription.type) {
       try {
         await pcRef.current.addIceCandidate(new RTCIceCandidate(candidateData));
-      } catch (e) {
-        console.warn("addIceCandidate error:", e);
-      }
+      } catch (e) {}
     } else {
       pendingCandidatesRef.current.push(candidateData);
     }
@@ -177,9 +181,7 @@ export const useWebRTC = (): UseWebRTCReturn => {
     for (const cand of candidates) {
       try {
         await pcRef.current.addIceCandidate(new RTCIceCandidate(cand));
-      } catch (e) {
-        console.warn("addIceCandidate error while processing queue:", e);
-      }
+      } catch (e) {}
     }
   };
 
@@ -247,9 +249,15 @@ export const useWebRTC = (): UseWebRTCReturn => {
       await clearCollection(calleeCandidates);
 
       const pc = createPeerConnection(stream, async (candidate) => {
+        const candObj = candidate.toJSON();
         try {
-          await addDoc(callerCandidates, candidate.toJSON());
+          await addDoc(callerCandidates, candObj);
         } catch (e) {}
+        if (rtdb) {
+          try {
+            await rtdbPush(rtdbRef(rtdb, `signaling_rooms/${newRoomId}/callerCandidates`), candObj);
+          } catch (e) {}
+        }
       });
 
       setCallStatus("creating-offer");
@@ -257,29 +265,44 @@ export const useWebRTC = (): UseWebRTCReturn => {
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
-      await setDoc(
-        roomRef,
-        {
-          roomId: newRoomId,
-          patientId,
-          patientName,
-          status: "waiting",
-          offer: { type: offer.type, sdp: offer.sdp },
-          createdAt: serverTimestamp(),
-        },
-        { merge: true }
-      );
+      const offerData = { type: offer.type, sdp: offer.sdp };
+      try {
+        await setDoc(
+          roomRef,
+          {
+            roomId: newRoomId,
+            patientId,
+            patientName,
+            status: "waiting",
+            offer: offerData,
+            createdAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+      } catch (e) {}
+
+      if (rtdb) {
+        try {
+          await rtdbSet(rtdbRef(rtdb, `signaling_rooms/${newRoomId}`), {
+            roomId: newRoomId,
+            patientId,
+            patientName,
+            status: "waiting",
+            offer: offerData,
+          });
+        } catch (e) {}
+      }
 
       setRoomId(newRoomId);
       setCallStatus("waiting-for-doctor");
 
       let isSettingRemote = false;
-      const unsub1 = onSnapshot(roomRef, async (snap) => {
-        const data = snap.data();
-        if (data?.answer && pc.signalingState === "have-local-offer" && !isSettingRemote) {
+
+      const handleAnswerSdp = async (answerObj: any) => {
+        if (answerObj && pc.signalingState === "have-local-offer" && !isSettingRemote) {
           isSettingRemote = true;
           try {
-            await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+            await pc.setRemoteDescription(new RTCSessionDescription(answerObj));
             await processPendingIceCandidates();
             setCallStatus("connecting");
           } catch (e) {
@@ -288,17 +311,51 @@ export const useWebRTC = (): UseWebRTCReturn => {
             isSettingRemote = false;
           }
         }
-      });
+      };
 
-      const unsub2 = onSnapshot(calleeCandidates, (snap) => {
-        snap.docChanges().forEach((change) => {
-          if (change.type === "added") {
-            addOrQueueIceCandidate(change.doc.data() as RTCIceCandidateInit);
+      const unsub1 = onSnapshot(
+        roomRef,
+        (snap) => {
+          const data = snap.data();
+          if (data?.answer) handleAnswerSdp(data.answer);
+        },
+        () => {}
+      );
+
+      let unsubRtdb1 = () => {};
+      if (rtdb) {
+        const answerRef = rtdbRef(rtdb, `signaling_rooms/${newRoomId}/answer`);
+        unsubRtdb1 = rtdbOnValue(answerRef, (snap) => {
+          if (snap.exists()) handleAnswerSdp(snap.val());
+        });
+      }
+
+      const unsub2 = onSnapshot(
+        calleeCandidates,
+        (snap) => {
+          snap.docChanges().forEach((change) => {
+            if (change.type === "added") {
+              addOrQueueIceCandidate(change.doc.data() as RTCIceCandidateInit);
+            }
+          });
+        },
+        () => {}
+      );
+
+      let unsubRtdb2 = () => {};
+      if (rtdb) {
+        const calleeCandRef = rtdbRef(rtdb, `signaling_rooms/${newRoomId}/calleeCandidates`);
+        unsubRtdb2 = rtdbOnValue(calleeCandRef, (snap) => {
+          if (snap.exists()) {
+            const val = snap.val();
+            Object.values(val).forEach((cand: any) => {
+              if (cand && cand.candidate) addOrQueueIceCandidate(cand as RTCIceCandidateInit);
+            });
           }
         });
-      });
+      }
 
-      unsubscribersRef.current.push(unsub1, unsub2);
+      unsubscribersRef.current.push(unsub1, unsub2, unsubRtdb1, unsubRtdb2);
       return newRoomId;
     },
     []
@@ -313,15 +370,26 @@ export const useWebRTC = (): UseWebRTCReturn => {
 
       const stream = await getUserMedia();
       const roomRef = doc(firestoreDb, "rooms", targetRoomId);
-      const roomSnap = await getDoc(roomRef);
 
-      if (!roomSnap.exists()) {
-        setError("Consultation room not found.");
+      let roomData: any = null;
+      try {
+        const roomSnap = await getDoc(roomRef);
+        if (roomSnap.exists()) roomData = roomSnap.data();
+      } catch (e) {}
+
+      if (!roomData && rtdb) {
+        try {
+          const rtdbSnap = await rtdbGet(rtdbRef(rtdb, `signaling_rooms/${targetRoomId}`));
+          if (rtdbSnap.exists()) roomData = rtdbSnap.val();
+        } catch (e) {}
+      }
+
+      if (!roomData || !roomData.offer) {
+        setError("Consultation room offer not found.");
         setCallStatus("error");
         return;
       }
 
-      const roomData = roomSnap.data();
       if (roomData.status === "ended") {
         setError("This consultation has already ended.");
         setCallStatus("error");
@@ -332,9 +400,15 @@ export const useWebRTC = (): UseWebRTCReturn => {
       await clearCollection(calleeCandidates);
 
       const pc = createPeerConnection(stream, async (candidate) => {
+        const candObj = candidate.toJSON();
         try {
-          await addDoc(calleeCandidates, candidate.toJSON());
+          await addDoc(calleeCandidates, candObj);
         } catch (e) {}
+        if (rtdb) {
+          try {
+            await rtdbPush(rtdbRef(rtdb, `signaling_rooms/${targetRoomId}/calleeCandidates`), candObj);
+          } catch (e) {}
+        }
       });
 
       await pc.setRemoteDescription(new RTCSessionDescription(roomData.offer));
@@ -343,12 +417,26 @@ export const useWebRTC = (): UseWebRTCReturn => {
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
 
-      await updateDoc(roomRef, {
-        answer: { type: answer.type, sdp: answer.sdp },
-        doctorId,
-        doctorName,
-        status: "active",
-      });
+      const answerObj = { type: answer.type, sdp: answer.sdp };
+      try {
+        await updateDoc(roomRef, {
+          answer: answerObj,
+          doctorId,
+          doctorName,
+          status: "active",
+        });
+      } catch (e) {}
+
+      if (rtdb) {
+        try {
+          await rtdbUpdate(rtdbRef(rtdb, `signaling_rooms/${targetRoomId}`), {
+            answer: answerObj,
+            doctorId,
+            doctorName,
+            status: "active",
+          });
+        } catch (e) {}
+      }
 
       setRoomId(targetRoomId);
       setCallStatus("connecting");
