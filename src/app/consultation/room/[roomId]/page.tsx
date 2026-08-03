@@ -513,7 +513,14 @@ const [loadingVitals, setLoadingVitals] = useState<boolean>(true);
   const isWaiting = callStatus === "waiting-for-doctor";
   const hasRemote = !!remoteStream;
 
-  return (
+  useEffect(() => {
+  if (callStatus === "ended" || callStatus === "error") {
+    setVitals(null);
+    setLoadingVitals(false);
+  }
+}, [callStatus]);
+
+return (
     <div className="min-h-screen max-h-screen bg-luxury-pureBlack text-zinc-100 flex flex-col overflow-hidden relative">
       <div className="absolute inset-0 bg-grid-pattern opacity-5 pointer-events-none" />
 
@@ -691,15 +698,6 @@ const [loadingVitals, setLoadingVitals] = useState<boolean>(true);
             </div>
           </div>
 
-{/* Live vitals panel during call (both Patient and Doctor) */}
-// Reset vitals when call ends
-useEffect(() => {
-  if (callStatus === "ended" || callStatus === "error") {
-    setVitals(null);
-    setLoadingVitals(false);
-  }
-}, [callStatus]);
-
 {(callStatus === "connected" && vitals) && (
   <div className="grid grid-cols-4 gap-2 shrink-0">
     {loadingVitals && (
@@ -738,7 +736,7 @@ useEffect(() => {
   </div>
 )}
 
-)}
+
 
           {/* ── CALL CONTROLS ── */}
           <div className="flex justify-center items-center gap-3 py-3 bg-zinc-950/90 backdrop-blur-md border border-zinc-900 rounded-2xl shrink-0 px-6">
