@@ -79,6 +79,12 @@ export interface DoctorApplication {
   createdAt: string;
 }
 
+// Utility to remove undefined fields before Firestore writes
+export const sanitizeUserProfile = (profile: UserProfile): UserProfile => {
+  // JSON stringify/parse removes undefined values
+  return JSON.parse(JSON.stringify(profile)) as UserProfile;
+};
+
 export interface PatientRecord {
   uid: string;
   name: string;
@@ -355,7 +361,8 @@ export const registerUserWithFirebase = async (
     // New doctors register as pending. Patients, Hospitals default to active.
     const status = role === "doctor" ? "pending" : "active";
 
-    const profile: UserProfile = {
+    // Build raw profile, then sanitize to remove any undefined fields
+    const rawProfile: UserProfile = {
       uid: user.uid,
       name,
       email,
@@ -365,8 +372,9 @@ export const registerUserWithFirebase = async (
       hospitalAffiliation: additionalFields?.hospitalAffiliation,
       licenseNumber: additionalFields?.licenseNumber,
       specialty: additionalFields?.specialization || additionalFields?.specialty,
-      availability: role === "doctor" ? "Offline" : undefined
+      availability: role === "doctor" ? "Offline" : undefined,
     };
+    const profile = sanitizeUserProfile(rawProfile);
 
     // 2. Try to write to real Firestore
     try {

@@ -692,7 +692,15 @@ const [loadingVitals, setLoadingVitals] = useState<boolean>(true);
           </div>
 
 {/* Live vitals panel during call (both Patient and Doctor) */}
-{vitals && (
+// Reset vitals when call ends
+useEffect(() => {
+  if (callStatus === "ended" || callStatus === "error") {
+    setVitals(null);
+    setLoadingVitals(false);
+  }
+}, [callStatus]);
+
+{(callStatus === "connected" && vitals) && (
   <div className="grid grid-cols-4 gap-2 shrink-0">
     {loadingVitals && (
       <div className="col-span-4 text-center text-zinc-400 text-sm">
@@ -728,6 +736,8 @@ const [loadingVitals, setLoadingVitals] = useState<boolean>(true);
       </div>
     ))}
   </div>
+)}
+
 )}
 
           {/* ── CALL CONTROLS ── */}
