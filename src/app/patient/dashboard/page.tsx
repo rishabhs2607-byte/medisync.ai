@@ -679,17 +679,17 @@ export default function PatientDashboard() {
 
             {/* IoT Thermometer Panel */}
             {(() => {
-              const activeTemp = liveTemp !== null ? liveTemp : (patient?.vitals?.temperature ?? 98.6);
-              const displayRssi = liveRssi !== null ? liveRssi : -65;
-              const displayHistory = tempHistory.length > 0 ? tempHistory : [98.1, 98.3, 98.5, 98.4, 98.6, activeTemp];
-              const isFever = activeTemp > 100.4;
+              const realTemp = liveTemp !== null ? liveTemp : (patient?.vitals?.temperature ?? null);
+              const isFever = realTemp !== null && realTemp > 100.4;
 
               return (
                 <div className="glass-panel p-6 rounded-2xl border border-luxury-goldRoyal/10 bg-luxury-richBlack/60 relative overflow-hidden">
                   <div className="flex items-center justify-between border-b border-zinc-900 pb-4 mb-5">
                     <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-luxury-greenEmerald animate-pulse" />
-                      <span className="text-[10px] text-luxury-greenEmerald font-mono uppercase font-bold">Online</span>
+                      <span className={`w-2 h-2 rounded-full ${isDeviceOnline ? "bg-luxury-greenEmerald animate-pulse" : "bg-zinc-700"}`} />
+                      <span className={`text-[10px] font-mono uppercase font-bold ${isDeviceOnline ? "text-luxury-greenEmerald" : "text-zinc-500"}`}>
+                        {isDeviceOnline ? "Online" : "Offline"}
+                      </span>
                     </div>
                     <h2 className="text-sm font-extrabold uppercase tracking-wider text-luxury-goldRoyal flex items-center gap-2">
                       <Thermometer className="text-luxury-goldRoyal animate-pulse" size={16} />
@@ -707,19 +707,25 @@ export default function PatientDashboard() {
                         <p className="text-[9px] text-zinc-500 uppercase tracking-widest font-mono">Live Temperature</p>
                         <div className="flex items-baseline gap-2 mt-1">
                           <p className={`text-4xl font-black ${isFever ? "text-luxury-redCrimson" : "text-white"}`}>
-                            {activeTemp.toFixed(1)}
+                            {realTemp !== null ? realTemp.toFixed(1) : "--.-"}
                           </p>
                           <span className="text-xs text-zinc-400 font-bold font-mono">°F</span>
                         </div>
                       </div>
                       <div className="mt-3">
-                        {isFever ? (
-                          <div className="flex items-center gap-1.5 text-[9px] text-luxury-redCrimson font-bold uppercase font-mono bg-luxury-redCrimson/10 border border-luxury-redCrimson/20 px-2 py-1 rounded">
-                            <AlertTriangle size={10} /> Fever Alert
-                          </div>
+                        {realTemp !== null ? (
+                          isFever ? (
+                            <div className="flex items-center gap-1.5 text-[9px] text-luxury-redCrimson font-bold uppercase font-mono bg-luxury-redCrimson/10 border border-luxury-redCrimson/20 px-2 py-1 rounded">
+                              <AlertTriangle size={10} /> Fever Alert
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-1.5 text-[9px] text-luxury-greenEmerald font-bold uppercase font-mono bg-luxury-greenEmerald/10 border border-luxury-greenEmerald/20 px-2 py-1 rounded">
+                              <Check size={10} /> Normal Range
+                            </div>
+                          )
                         ) : (
-                          <div className="flex items-center gap-1.5 text-[9px] text-luxury-greenEmerald font-bold uppercase font-mono bg-luxury-greenEmerald/10 border border-luxury-greenEmerald/20 px-2 py-1 rounded">
-                            <Check size={10} /> Normal Range
+                          <div className="text-[9px] text-zinc-500 font-mono bg-zinc-900 border border-zinc-800 px-2 py-1 rounded">
+                            Waiting for device...
                           </div>
                         )}
                       </div>
@@ -733,23 +739,27 @@ export default function PatientDashboard() {
                       </div>
                       <div>
                         <p className="text-[9px] text-zinc-500 uppercase font-mono">Last Sync</p>
-                        <p className="text-[10px] text-luxury-greenEmerald font-mono mt-1 font-bold">{lastUpdatedText || "Just now"}</p>
+                        <p className="text-[10px] text-zinc-300 font-mono mt-1">{lastUpdatedText}</p>
                       </div>
                     </div>
 
                     {/* WiFi */}
                     <div className="bg-luxury-pureBlack border border-zinc-900 p-4 rounded-xl flex flex-col justify-between">
                       <p className="text-[9px] text-zinc-500 uppercase font-mono">WiFi Signal</p>
-                      <div className="mt-1">
-                        <p className="text-sm font-bold text-white font-mono">{displayRssi} dBm</p>
-                        <p className="text-[9px] text-luxury-blueElectric font-mono font-semibold uppercase mt-0.5">
-                          {displayRssi >= -50 ? "Excellent" : displayRssi >= -70 ? "Good" : displayRssi >= -85 ? "Fair" : "Weak"}
-                        </p>
-                      </div>
+                      {liveRssi !== null ? (
+                        <div className="mt-1">
+                          <p className="text-sm font-bold text-white font-mono">{liveRssi} dBm</p>
+                          <p className="text-[9px] text-luxury-blueElectric font-mono font-semibold uppercase mt-0.5">
+                            {liveRssi >= -50 ? "Excellent" : liveRssi >= -70 ? "Good" : liveRssi >= -85 ? "Fair" : "Weak"}
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="text-sm font-bold text-zinc-600 mt-1 font-mono">No Signal</p>
+                      )}
                       <div className="flex gap-0.5 items-end h-3 mt-2">
-                        {[1, 2, 3, 4].map((bar) => (
-                          <div key={bar} style={{ height: `${bar * 25}%` }}
-                            className="w-full rounded-t-sm transition-all bg-luxury-blueElectric" />
+                        {[90, 85, 75, 60].map((threshold, i) => (
+                          <div key={i} style={{ height: `${(i + 1) * 25}%` }}
+                            className={`w-full rounded-t-sm transition-all ${liveRssi !== null && Math.abs(liveRssi) <= Math.abs(-threshold + 100) ? "bg-luxury-blueElectric" : "bg-zinc-800"}`} />
                         ))}
                       </div>
                     </div>
@@ -758,13 +768,17 @@ export default function PatientDashboard() {
                     <div className="bg-luxury-pureBlack border border-zinc-900 p-4 rounded-xl flex flex-col justify-between">
                       <p className="text-[9px] text-zinc-500 uppercase font-mono mb-2">Temp Trend</p>
                       <div className="h-10 flex items-end gap-1">
-                        {displayHistory.map((val, idx) => {
-                          const percent = Math.min(100, Math.max(15, ((val - 93) / (108 - 93)) * 100));
-                          return (
-                            <div key={idx} style={{ height: `${percent}%` }}
-                              className={`w-full rounded-t-sm transition-all ${val > 100.4 ? "bg-luxury-redCrimson" : "bg-luxury-goldRoyal"}`} />
-                          );
-                        })}
+                        {tempHistory.length === 0 ? (
+                          <span className="text-[9px] text-zinc-600 font-mono">Waiting for readings...</span>
+                        ) : (
+                          tempHistory.map((val, idx) => {
+                            const percent = Math.min(100, Math.max(10, ((val - 93) / (108 - 93)) * 100));
+                            return (
+                              <div key={idx} style={{ height: `${percent}%` }}
+                                className={`w-full rounded-t-sm transition-all ${val > 100.4 ? "bg-luxury-redCrimson" : "bg-luxury-goldRoyal"}`} />
+                            );
+                          })
+                        )}
                       </div>
                       <div className="flex justify-between text-[8px] text-zinc-500 font-mono border-t border-zinc-900 pt-1.5 mt-1">
                         <span>93°F</span><span>108°F</span>
@@ -777,18 +791,18 @@ export default function PatientDashboard() {
 
             {/* IoT Oximeter Panel */}
             {(() => {
-              const activeSpO2 = liveSpO2 !== null ? liveSpO2 : (patient?.vitals?.spo2 ?? 98);
-              const activeHR = liveHR !== null ? liveHR : (patient?.vitals?.heartRate ?? 74);
-              const displayOxiRssi = liveOxiRssi !== null ? liveOxiRssi : -62;
-              const displayOxiHistory = oxiHistory.length > 0 ? oxiHistory : [97, 98, 98, 99, 98, activeSpO2];
-              const isHypoxia = activeSpO2 < 90;
+              const realSpO2 = liveSpO2 !== null ? liveSpO2 : (patient?.vitals?.spo2 ?? null);
+              const realHR = liveHR !== null ? liveHR : (patient?.vitals?.heartRate ?? null);
+              const isHypoxia = realSpO2 !== null && realSpO2 < 90;
 
               return (
                 <div className="glass-panel p-6 rounded-2xl border border-luxury-goldRoyal/10 bg-luxury-richBlack/60 relative overflow-hidden">
                   <div className="flex items-center justify-between border-b border-zinc-900 pb-4 mb-5">
                     <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-luxury-greenEmerald animate-pulse" />
-                      <span className="text-[10px] text-luxury-greenEmerald font-mono uppercase font-bold">Online</span>
+                      <span className={`w-2 h-2 rounded-full ${isOxiOnline ? "bg-luxury-greenEmerald animate-pulse" : "bg-zinc-700"}`} />
+                      <span className={`text-[10px] font-mono uppercase font-bold ${isOxiOnline ? "text-luxury-greenEmerald" : "text-zinc-500"}`}>
+                        {isOxiOnline ? "Online" : "Offline"}
+                      </span>
                     </div>
                     <h2 className="text-sm font-extrabold uppercase tracking-wider text-luxury-goldRoyal flex items-center gap-2">
                       <ECGIcon className="text-luxury-goldRoyal animate-pulse" size={16} />
@@ -806,23 +820,29 @@ export default function PatientDashboard() {
                         <p className="text-[9px] text-zinc-500 uppercase tracking-widest font-mono">Live SpO2</p>
                         <div className="flex items-baseline gap-2 mt-1">
                           <p className={`text-4xl font-black ${isHypoxia ? "text-luxury-redCrimson" : "text-white"}`}>
-                            {Math.round(activeSpO2)}
+                            {realSpO2 !== null ? Math.round(realSpO2) : "--"}
                           </p>
                           <span className="text-xs text-zinc-400 font-bold font-mono">%</span>
                         </div>
                       </div>
                       <div className="mt-3">
-                        {isHypoxia ? (
-                          <div className="flex items-center gap-1.5 text-[9px] text-luxury-redCrimson font-bold uppercase font-mono bg-luxury-redCrimson/10 border border-luxury-redCrimson/20 px-2 py-1 rounded animate-pulse">
-                            <AlertTriangle size={10} /> Hypoxia Alert
-                          </div>
-                        ) : activeSpO2 <= 94 ? (
-                          <div className="flex items-center gap-1.5 text-[9px] text-luxury-goldRoyal font-bold uppercase font-mono bg-luxury-goldRoyal/10 border border-luxury-goldRoyal/20 px-2 py-1 rounded">
-                            <AlertTriangle size={10} /> Warning Range
-                          </div>
+                        {realSpO2 !== null ? (
+                          isHypoxia ? (
+                            <div className="flex items-center gap-1.5 text-[9px] text-luxury-redCrimson font-bold uppercase font-mono bg-luxury-redCrimson/10 border border-luxury-redCrimson/20 px-2 py-1 rounded animate-pulse">
+                              <AlertTriangle size={10} /> Hypoxia Alert
+                            </div>
+                          ) : realSpO2 <= 94 ? (
+                            <div className="flex items-center gap-1.5 text-[9px] text-luxury-goldRoyal font-bold uppercase font-mono bg-luxury-goldRoyal/10 border border-luxury-goldRoyal/20 px-2 py-1 rounded">
+                              <AlertTriangle size={10} /> Warning Range
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-1.5 text-[9px] text-luxury-greenEmerald font-bold uppercase font-mono bg-luxury-greenEmerald/10 border border-luxury-greenEmerald/20 px-2 py-1 rounded">
+                              <Check size={10} /> Healthy SpO2
+                            </div>
+                          )
                         ) : (
-                          <div className="flex items-center gap-1.5 text-[9px] text-luxury-greenEmerald font-bold uppercase font-mono bg-luxury-greenEmerald/10 border border-luxury-greenEmerald/20 px-2 py-1 rounded">
-                            <Check size={10} /> Healthy SpO2
+                          <div className="text-[9px] text-zinc-500 font-mono bg-zinc-900 border border-zinc-800 px-2 py-1 rounded">
+                            Waiting for device...
                           </div>
                         )}
                       </div>
@@ -834,15 +854,21 @@ export default function PatientDashboard() {
                         <p className="text-[9px] text-zinc-500 uppercase tracking-widest font-mono">Live Pulse Rate</p>
                         <div className="flex items-baseline gap-2 mt-1">
                           <p className="text-4xl font-black text-white">
-                            {Math.round(activeHR)}
+                            {realHR !== null ? Math.round(realHR) : "--"}
                           </p>
                           <span className="text-xs text-zinc-400 font-bold font-mono">BPM</span>
                         </div>
                       </div>
                       <div className="mt-3">
-                        <div className="flex items-center gap-1.5 text-[9px] text-luxury-blueElectric font-bold uppercase font-mono bg-luxury-blueElectric/10 border border-luxury-blueElectric/20 px-2 py-1 rounded">
-                          <Heart className="text-luxury-redCrimson animate-pulse" size={10} /> Active Pulse
-                        </div>
+                        {realHR !== null ? (
+                          <div className="flex items-center gap-1.5 text-[9px] text-luxury-blueElectric font-bold uppercase font-mono bg-luxury-blueElectric/10 border border-luxury-blueElectric/20 px-2 py-1 rounded">
+                            <Heart className="text-luxury-redCrimson animate-pulse" size={10} /> Active Pulse
+                          </div>
+                        ) : (
+                          <div className="text-[9px] text-zinc-500 font-mono bg-zinc-900 border border-zinc-800 px-2 py-1 rounded">
+                            No active reading
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -854,23 +880,27 @@ export default function PatientDashboard() {
                       </div>
                       <div>
                         <p className="text-[9px] text-zinc-500 uppercase font-mono">Last Sync</p>
-                        <p className="text-[10px] text-luxury-greenEmerald font-mono mt-1 font-bold">{lastOxiUpdatedText || "Just now"}</p>
+                        <p className="text-[10px] text-zinc-300 font-mono mt-1">{lastOxiUpdatedText}</p>
                       </div>
                     </div>
 
                     {/* WiFi */}
                     <div className="bg-luxury-pureBlack border border-zinc-900 p-4 rounded-xl flex flex-col justify-between">
                       <p className="text-[9px] text-zinc-500 uppercase font-mono">WiFi Signal</p>
-                      <div className="mt-1">
-                        <p className="text-sm font-bold text-white font-mono">{displayOxiRssi} dBm</p>
-                        <p className="text-[9px] text-luxury-blueElectric font-mono font-semibold uppercase mt-0.5">
-                          {displayOxiRssi >= -50 ? "Excellent" : displayOxiRssi >= -70 ? "Good" : displayOxiRssi >= -85 ? "Fair" : "Weak"}
-                        </p>
-                      </div>
+                      {liveOxiRssi !== null ? (
+                        <div className="mt-1">
+                          <p className="text-sm font-bold text-white font-mono">{liveOxiRssi} dBm</p>
+                          <p className="text-[9px] text-luxury-blueElectric font-mono font-semibold uppercase mt-0.5">
+                            {liveOxiRssi >= -50 ? "Excellent" : liveOxiRssi >= -70 ? "Good" : liveOxiRssi >= -85 ? "Fair" : "Weak"}
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="text-sm font-bold text-zinc-600 mt-1 font-mono">No Signal</p>
+                      )}
                       <div className="flex gap-0.5 items-end h-3 mt-2">
-                        {[1, 2, 3, 4].map((bar) => (
-                          <div key={bar} style={{ height: `${bar * 25}%` }}
-                            className="w-full rounded-t-sm transition-all bg-luxury-blueElectric" />
+                        {[90, 85, 75, 60].map((threshold, i) => (
+                          <div key={i} style={{ height: `${(i + 1) * 25}%` }}
+                            className={`w-full rounded-t-sm transition-all ${liveOxiRssi !== null && Math.abs(liveOxiRssi) <= Math.abs(-threshold + 100) ? "bg-luxury-blueElectric" : "bg-zinc-800"}`} />
                         ))}
                       </div>
                     </div>
@@ -880,13 +910,17 @@ export default function PatientDashboard() {
                   <div className="mt-4 bg-luxury-pureBlack border border-zinc-900 p-4 rounded-xl flex flex-col justify-between">
                     <p className="text-[9px] text-zinc-500 uppercase font-mono mb-2">Oxygen Level Trend (SpO2 %)</p>
                     <div className="h-10 flex items-end gap-1">
-                      {displayOxiHistory.map((val, idx) => {
-                        const percent = Math.min(100, Math.max(15, ((val - 60) / (100 - 60)) * 100));
-                        return (
-                          <div key={idx} style={{ height: `${percent}%` }}
-                            className={`w-full rounded-t-sm transition-all ${val < 90 ? "bg-luxury-redCrimson" : val <= 94 ? "bg-luxury-goldRoyal" : "bg-luxury-greenEmerald"}`} />
-                        );
-                      })}
+                      {oxiHistory.length === 0 ? (
+                        <span className="text-[9px] text-zinc-600 font-mono">Waiting for readings...</span>
+                      ) : (
+                        oxiHistory.map((val, idx) => {
+                          const percent = Math.min(100, Math.max(10, ((val - 60) / (100 - 60)) * 100));
+                          return (
+                            <div key={idx} style={{ height: `${percent}%` }}
+                              className={`w-full rounded-t-sm transition-all ${val < 90 ? "bg-luxury-redCrimson" : val <= 94 ? "bg-luxury-goldRoyal" : "bg-luxury-greenEmerald"}`} />
+                          );
+                        })
+                      )}
                     </div>
                     <div className="flex justify-between text-[8px] text-zinc-500 font-mono border-t border-zinc-900 pt-1.5 mt-1">
                       <span>60%</span><span>100%</span>

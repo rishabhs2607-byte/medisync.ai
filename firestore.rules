@@ -63,7 +63,14 @@ service cloud.firestore {
 
     // Top-level patient vitals (real-time telemetry & IoT streaming)
     match /patient_vitals/{patientId} {
-      allow read, write: if isAuthenticated();
+      allow read: if isAuthenticated();
+      allow write: if true; // Allows IoT hardware devices (ESP8266/ESP32) to write vitals
+    }
+
+    // IoT Device Telemetry (Hardware REST / SDK endpoint)
+    match /device_telemetry/{deviceId} {
+      allow read: if isAuthenticated();
+      allow write: if true; // Allows unauthenticated IoT hardware sensors to write telemetry
     }
 
     // Hospital Profiles

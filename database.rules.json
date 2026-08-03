@@ -46,12 +46,22 @@
         ".write": "auth != null && (auth.uid == $userId || root.child('users').child(auth.uid).child('role').val() == 'admin')"
       }
     },
-    // Device telemetry endpoint for IoT thermometers
+    // Device telemetry endpoints for IoT thermometers and hardware sensors
     "device_telemetry": {
-      "$deviceId": {
-        ".read": "true",
-        ".write": "true"
-      }
+      ".read": "true",
+      ".write": "true"
+    },
+    "telemetry_vitals": {
+      ".read": "true",
+      ".write": "true"
+    },
+    "devices": {
+      ".read": "true",
+      ".write": "true"
+    },
+    "telemetry": {
+      ".read": "true",
+      ".write": "true"
     }
   }
 }
