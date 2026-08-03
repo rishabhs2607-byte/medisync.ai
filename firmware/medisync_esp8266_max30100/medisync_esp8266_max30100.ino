@@ -374,6 +374,9 @@ void performMeasurementAndUpload() {
     
     String path = "/device_telemetry/" + String(DEVICE_ID);
     if (Firebase.RTDB.setJSON(&fbdo, path.c_str(), &json)) {
+      // Also push to telemetry_vitals for instant patient sync
+      Firebase.RTDB.setJSON(&fbdo, "/telemetry_vitals/pat1", &json);
+
       renderScreen("SYNCED", "Successfully Synced!", "Data Uploaded", "Just Now");
       playBuzzerTone(2500, 100);
       delay(50);
