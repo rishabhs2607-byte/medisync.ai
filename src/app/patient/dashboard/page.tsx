@@ -411,9 +411,9 @@ export default function PatientDashboard() {
   }
 
   const activeAlerts = db.alerts.filter(a => a.patientId === patientId && a.status === "active");
-  const currentTemp = (liveTemp !== null && isDeviceOnline) ? parseFloat(liveTemp.toFixed(1)) : patient.vitals.temperature;
-  const currentSpO2 = (liveSpO2 !== null && isOxiOnline) ? liveSpO2 : patient.vitals.spo2;
-  const currentHR = (liveHR !== null && isOxiOnline) ? liveHR : patient.vitals.heartRate;
+  const currentTemp = liveTemp !== null ? parseFloat(liveTemp.toFixed(1)) : patient.vitals.temperature;
+  const currentSpO2 = liveSpO2 !== null ? liveSpO2 : patient.vitals.spo2;
+  const currentHR = liveHR !== null ? liveHR : patient.vitals.heartRate;
 
   const aiReport = analyzeVitals(
     currentHR, currentSpO2, currentTemp,

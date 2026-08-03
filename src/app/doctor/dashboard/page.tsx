@@ -5,8 +5,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   getMediSyncDb, saveMediSyncDb, PatientRecord, Appointment, Prescription,
-  subscribeToWaitingRooms, subscribeToPatientVitals
+  subscribeToWaitingRooms, subscribeToPatientVitals, rtdb
 } from "@/services/firebase";
+import { ref, onValue } from "firebase/database";
 import { useAuth } from "@/context/AuthContext";
 import { analyzeVitals } from "@/services/aiEngine";
 import AuthGuard from "@/components/AuthGuard";
@@ -76,11 +77,26 @@ export default function DoctorDashboard() {
   const handleSelectRoom = (room: WaitingRoom) => {
     if (vitalsUnsub) vitalsUnsub();
     setSelectedRoomVitals(null);
-    const unsub = subscribeToPatientVitals(room.patientId, (vitals, name) => {
-      setSelectedRoomVitals(vitals);
+
+    const unsubFs = subscribeToPatientVitals(room.patientId, (vitals, name) => {
+      if (vitals) setSelectedRoomVitals((prev: any) => ({ ...prev, ...vitals }));
       setSelectedRoomPatientName(name);
     });
-    setVitalsUnsub(() => unsub);
+
+    let unsubRtdb = () => {};
+    if (rtdb) {
+      const vRef = ref(rtdb, `telemetry_vitals/${room.patientId}`);
+      unsubRtdb = onValue(vRef, (snap) => {
+        if (snap.exists()) {
+          setSelectedRoomVitals((prev: any) => ({ ...prev, ...snap.val() }));
+        }
+      });
+    }
+
+    setVitalsUnsub(() => () => {
+      unsubFs();
+      unsubRtdb();
+    });
   };
   useEffect(() => () => { if (vitalsUnsub) vitalsUnsub(); }, [vitalsUnsub]);
 
@@ -91,10 +107,24 @@ export default function DoctorDashboard() {
       setLivePatientVitals(null);
       return;
     }
-    const unsub = subscribeToPatientVitals(selectedPatientId, (vitals) => {
-      if (vitals) setLivePatientVitals(vitals);
+    const unsubFs = subscribeToPatientVitals(selectedPatientId, (vitals) => {
+      if (vitals) setLivePatientVitals((prev: any) => ({ ...prev, ...vitals }));
     });
-    return () => unsub();
+
+    let unsubRtdb = () => {};
+    if (rtdb) {
+      const vRef = ref(rtdb, `telemetry_vitals/${selectedPatientId}`);
+      unsubRtdb = onValue(vRef, (snap) => {
+        if (snap.exists()) {
+          setLivePatientVitals((prev: any) => ({ ...prev, ...snap.val() }));
+        }
+      });
+    }
+
+    return () => {
+      unsubFs();
+      unsubRtdb();
+    };
   }, [selectedPatientId]);
 
   // Join call as doctor

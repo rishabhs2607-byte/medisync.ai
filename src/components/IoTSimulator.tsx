@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState } from "react";
-import { getMediSyncDb, saveMediSyncDb, writePatientVitalsToFirestore } from "@/services/firebase";
+import { getMediSyncDb, saveMediSyncDb, writePatientVitalsToFirestore, rtdb } from "@/services/firebase";
+import { ref, set } from "firebase/database";
 import { Check, Edit3 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
@@ -47,6 +48,16 @@ export default function IoTSimulator() {
       
       saveMediSyncDb(db);
       writePatientVitalsToFirestore(patientId, patient.name, patient.vitals);
+      if (rtdb) {
+        try {
+          set(ref(rtdb, `telemetry_vitals/${patientId}`), patient.vitals);
+          set(ref(rtdb, `device_telemetry/thermometer_01`), {
+            temperature: patient.vitals.temperature,
+            timestamp: Date.now(),
+            rssi: -62
+          });
+        } catch (e) {}
+      }
       window.dispatchEvent(new Event("storage"));
 
       setManualSaveSuccess(true);
