@@ -4,22 +4,22 @@
  * 
  * Hardware Connections (Label mapping):
  * 1. MAX30100 Pulse Oximeter Sensor:
- *    VIN  → 3.3V
- *    GND  → GND
- *    SDA  → D2 (GPIO 4)
- *    SCL  → D1 (GPIO 5)
+ *    VIN  -> 3.3V
+ *    GND  -> GND
+ *    SDA  -> D2 (GPIO 4)
+ *    SCL  -> D1 (GPIO 5)
  * 2. SSD1306 OLED (I2C):
- *    VCC  → 3.3V
- *    GND  → GND
- *    SDA  → D2 (GPIO 4)
- *    SCL  → D1 (GPIO 5)
+ *    VCC  -> 3.3V
+ *    GND  -> GND
+ *    SDA  -> D2 (GPIO 4)
+ *    SCL  -> D1 (GPIO 5)
  * 3. Push Button:
- *    One Side  → D5 (GPIO 14)
- *    Other Side → GND
+ *    One Side   -> D5 (GPIO 14)
+ *    Other Side -> GND
  *    Note: Configured with internal INPUT_PULLUP.
  * 4. Active Buzzer:
- *    Positive (+) → D6 (GPIO 12)
- *    Negative (-) → GND
+ *    Positive (+) -> D6 (GPIO 12)
+ *    Negative (-) -> GND
  * 
  * Features:
  * - OLED display flow: Boot -> WiFi -> Firebase -> Ready -> Measuring (Finger Detect & Signal Quality) -> Result -> Synced.
