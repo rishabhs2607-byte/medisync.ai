@@ -214,14 +214,19 @@ export default function PatientDashboard() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [patientId]);
 
-  // Device online check
+  // Device online check for IoT Thermometer
   useEffect(() => {
     const timer = setInterval(() => {
-      if (liveTimestamp) {
-        const diffMs = Date.now() - liveTimestamp;
+      const dbInstance = getMediSyncDb();
+      const p = dbInstance.patients.find(x => x.uid === patientId);
+      const effectiveTs = liveTimestamp || (p?.vitals?.lastUpdated ? new Date(p.vitals.lastUpdated).getTime() : null);
+
+      if (effectiveTs && !isNaN(effectiveTs)) {
+        const diffMs = Date.now() - effectiveTs;
         const diffSec = Math.floor(diffMs / 1000);
-        const isOnline = diffSec <= 30;
+        const isOnline = diffSec <= 300 || p?.connectedDevice?.status === "online" || liveTemp !== null;
         setIsDeviceOnline(isOnline);
+
         if (diffSec < 5) setLastUpdatedText("Just now");
         else if (diffSec < 60) setLastUpdatedText(`${diffSec} seconds ago`);
         else {
@@ -229,9 +234,6 @@ export default function PatientDashboard() {
           setLastUpdatedText(`${diffMin} minute${diffMin > 1 ? "s" : ""} ago`);
         }
 
-        // Sync offline status to local DB if device went offline
-        const dbInstance = getMediSyncDb();
-        const p = dbInstance.patients.find(x => x.uid === patientId);
         if (p && p.connectedDevice && p.connectedDevice.deviceId === "thermometer_01") {
           const currentStatus = isOnline ? "online" : "offline";
           if (p.connectedDevice.status !== currentStatus) {
@@ -241,21 +243,27 @@ export default function PatientDashboard() {
           }
         }
       } else {
-        setIsDeviceOnline(false);
-        setLastUpdatedText("Never");
+        const isOnline = p?.connectedDevice?.status === "online" || liveTemp !== null;
+        setIsDeviceOnline(isOnline);
+        if (!isOnline) setLastUpdatedText("Never");
       }
     }, 1000);
     return () => clearInterval(timer);
-  }, [liveTimestamp, patientId, loadDb]);
+  }, [liveTimestamp, liveTemp, patientId, loadDb]);
 
   // Oximeter online check
   useEffect(() => {
     const timer = setInterval(() => {
-      if (liveOxiTimestamp) {
-        const diffMs = Date.now() - liveOxiTimestamp;
+      const dbInstance = getMediSyncDb();
+      const p = dbInstance.patients.find(x => x.uid === patientId);
+      const effectiveTs = liveOxiTimestamp || (p?.vitals?.lastUpdated ? new Date(p.vitals.lastUpdated).getTime() : null);
+
+      if (effectiveTs && !isNaN(effectiveTs)) {
+        const diffMs = Date.now() - effectiveTs;
         const diffSec = Math.floor(diffMs / 1000);
-        const isOnline = diffSec <= 30;
+        const isOnline = diffSec <= 300 || p?.connectedDevice?.status === "online" || liveSpO2 !== null;
         setIsOxiOnline(isOnline);
+
         if (diffSec < 5) setLastOxiUpdatedText("Just now");
         else if (diffSec < 60) setLastOxiUpdatedText(`${diffSec} seconds ago`);
         else {
@@ -263,9 +271,6 @@ export default function PatientDashboard() {
           setLastOxiUpdatedText(`${diffMin} minute${diffMin > 1 ? "s" : ""} ago`);
         }
 
-        // Sync offline status to local DB if device went offline
-        const dbInstance = getMediSyncDb();
-        const p = dbInstance.patients.find(x => x.uid === patientId);
         if (p && p.connectedDevice && p.connectedDevice.deviceId === "oximeter_01") {
           const currentStatus = isOnline ? "online" : "offline";
           if (p.connectedDevice.status !== currentStatus) {
@@ -275,12 +280,13 @@ export default function PatientDashboard() {
           }
         }
       } else {
-        setIsOxiOnline(false);
-        setLastOxiUpdatedText("Never");
+        const isOnline = p?.connectedDevice?.status === "online" || liveSpO2 !== null;
+        setIsOxiOnline(isOnline);
+        if (!isOnline) setLastOxiUpdatedText("Never");
       }
     }, 1000);
     return () => clearInterval(timer);
-  }, [liveOxiTimestamp, patientId, loadDb]);
+  }, [liveOxiTimestamp, liveSpO2, patientId, loadDb]);
 
 
 
