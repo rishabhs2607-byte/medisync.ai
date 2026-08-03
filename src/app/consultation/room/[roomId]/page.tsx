@@ -75,6 +75,7 @@ export default function ConsultationRoom() {
 
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  const chatEndRef = useRef<HTMLDivElement>(null);
 
   const [roomData, setRoomData] = useState<RoomData | null>(null);
   const [messages, setMessages] = useState<LiveMessage[]>([]);
@@ -90,6 +91,80 @@ export default function ConsultationRoom() {
   const [editSys, setEditSys] = useState("120");
   const [editDia, setEditDia] = useState("80");
   const [editGlucose, setEditGlucose] = useState("95");
+
+  // ─── Prescription & Call State ─────────────────────────────────────────────
+  const [draftedMeds, setDraftedMeds] = useState<any[]>([]);
+  const [medName, setMedName] = useState("");
+  const [medDosage, setMedDosage] = useState("");
+  const [medFreq, setMedFreq] = useState("Twice Daily");
+  const [medDur, setMedDur] = useState("5 Days");
+  const [medInst, setMedInst] = useState("After Food");
+  const [presNotes, setPresNotes] = useState("");
+  const [transferBanner, setTransferBanner] = useState<string | null>(null);
+  const [isEnding, setIsEnding] = useState(false);
+  const [endWarning, setEndWarning] = useState(false);
+  const [presSubmitted, setPresSubmitted] = useState(false);
+  const [callEnded, setCallEnded] = useState(false);
+  const endButtonDisabled = isEnding;
+
+  const syncPrescriptionDraft = async (meds: any[], notes: string) => {
+    try {
+      await updateDoc(doc(firestoreDb, "rooms", roomId), {
+        draftedMeds: meds,
+        presNotes: notes,
+      });
+    } catch (e) {}
+  };
+
+  // ─── Subscribe to Room & Messages ──────────────────────────────────────────
+  useEffect(() => {
+    if (!roomId) return;
+
+    const roomRef = doc(firestoreDb, "rooms", roomId);
+    const unsubRoom = onSnapshot(roomRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data() as RoomData;
+        setRoomData(data);
+      }
+    });
+
+    const msgsRef = collection(firestoreDb, "rooms", roomId, "messages");
+    const q = query(msgsRef, orderBy("timestamp", "asc"));
+    const unsubMsgs = onSnapshot(q, (snapshot) => {
+      const msgs: LiveMessage[] = snapshot.docs.map((docSnap) => ({
+        id: docSnap.id,
+        ...docSnap.data(),
+      })) as LiveMessage[];
+      setMessages(msgs);
+    });
+
+    return () => {
+      unsubRoom();
+      unsubMsgs();
+    };
+  }, [roomId]);
+
+  // ─── Stream Video Element Attachment & WebRTC Call Initiation ──────────────
+  useEffect(() => {
+    if (localVideoRef.current && localStream) {
+      localVideoRef.current.srcObject = localStream;
+    }
+  }, [localStream]);
+
+  useEffect(() => {
+    if (remoteVideoRef.current && remoteStream) {
+      remoteVideoRef.current.srcObject = remoteStream;
+    }
+  }, [remoteStream]);
+
+  useEffect(() => {
+    if (!roomId || !user) return;
+    if (role === "doctor") {
+      joinCall(roomId, user.uid, user.name);
+    } else {
+      startCall(user.uid, user.name, roomId);
+    }
+  }, [roomId, user, role]);
 
   // ─── Realtime RTDB & Firestore Patient Vitals Subscription ────────────────────────
   useEffect(() => {
