@@ -279,7 +279,7 @@ export default function DoctorDashboard() {
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {waitingRooms.map((room) => (
+                    {Array.from(new Map(waitingRooms.map((r) => [r.patientId || r.patientName, r])).values()).map((room) => (
                       <div key={room.id} className="p-3.5 bg-luxury-pureBlack rounded-xl border border-luxury-greenEmerald/20 space-y-3">
                         <div className="flex items-start justify-between">
                           <div>
