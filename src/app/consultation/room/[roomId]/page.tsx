@@ -276,20 +276,46 @@ export default function ConsultationRoom() {
     if (!user || !rtdb) return;
 
     const deviceId = "thermometer_01";
-    const paths = [`device_telemetry/${deviceId}`, `devices/${deviceId}`, `telemetry/${deviceId}`];
+    const paths = [
+      `device_telemetry/${deviceId}`,
+      `devices/${deviceId}`,
+      `telemetry/${deviceId}`,
+      `device_telemetry`,
+      `telemetry_vitals/${user.uid}`
+    ];
+
+    const extractTemperature = (data: any): number | null => {
+      if (data === null || data === undefined) return null;
+      if (typeof data === "number") {
+        if (data >= 30 && data <= 115) return data;
+        return null;
+      }
+      if (typeof data === "string") {
+        const p = parseFloat(data);
+        if (!isNaN(p) && p >= 30 && p <= 115) return p;
+        return null;
+      }
+      if (typeof data === "object") {
+        const keys = ["temperature", "temp", "val", "value", "t", "body_temp", "bodyTemp", "reading", "celsius", "fahrenheit", "deg", "degree"];
+        for (const k of keys) {
+          if (data[k] !== undefined) {
+            const res = extractTemperature(data[k]);
+            if (res !== null) return res;
+          }
+        }
+        for (const key of Object.keys(data)) {
+          const res = extractTemperature(data[key]);
+          if (res !== null) return res;
+        }
+      }
+      return null;
+    };
 
     const handleData = (snapshot: any) => {
       const data = snapshot.val();
       if (!data) return;
 
-      const rawTemp = data.temperature ?? data.temp ?? data.val ?? data.value ?? data.t;
-      let tempVal: number | null = null;
-      if (typeof rawTemp === "number") {
-        tempVal = rawTemp;
-      } else if (typeof rawTemp === "string") {
-        const parsed = parseFloat(rawTemp);
-        if (!isNaN(parsed)) tempVal = parsed;
-      }
+      let tempVal = extractTemperature(data);
 
       if (tempVal !== null) {
         if (tempVal >= 30 && tempVal <= 45) {

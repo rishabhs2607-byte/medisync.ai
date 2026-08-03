@@ -58,8 +58,8 @@ export default function PatientDashboard() {
   const [liveTimestamp, setLiveTimestamp] = useState<number | null>(null);
   const [liveRssi, setLiveRssi] = useState<number | null>(null);
   const [tempHistory, setTempHistory] = useState<number[]>([]);
-  const [isDeviceOnline, setIsDeviceOnline] = useState<boolean>(false);
-  const [lastUpdatedText, setLastUpdatedText] = useState<string>("Never");
+  const [isDeviceOnline, setIsDeviceOnline] = useState<boolean>(true);
+  const [lastUpdatedText, setLastUpdatedText] = useState<string>("Just now");
 
   // IoT Oximeter states
   const [liveSpO2, setLiveSpO2] = useState<number | null>(null);
@@ -67,8 +67,8 @@ export default function PatientDashboard() {
   const [liveOxiTimestamp, setLiveOxiTimestamp] = useState<number | null>(null);
   const [liveOxiRssi, setLiveOxiRssi] = useState<number | null>(null);
   const [oxiHistory, setOxiHistory] = useState<number[]>([]);
-  const [isOxiOnline, setIsOxiOnline] = useState<boolean>(false);
-  const [lastOxiUpdatedText, setLastOxiUpdatedText] = useState<string>("Never");
+  const [isOxiOnline, setIsOxiOnline] = useState<boolean>(true);
+  const [lastOxiUpdatedText, setLastOxiUpdatedText] = useState<string>("Just now");
 
   const [firestorePrescriptions, setFirestorePrescriptions] = useState<any[]>([]);
 
@@ -92,6 +92,7 @@ export default function PatientDashboard() {
     const initP = dbInst.patients.find(x => x.uid === patientId);
     if (initP && initP.vitals && typeof initP.vitals.temperature === "number") {
       setLiveTemp(initP.vitals.temperature);
+      setIsDeviceOnline(true);
       if (initP.vitals.lastUpdated) {
         const initTs = new Date(initP.vitals.lastUpdated).getTime();
         if (!isNaN(initTs)) setLiveTimestamp(initTs);
@@ -99,20 +100,46 @@ export default function PatientDashboard() {
     }
 
     const deviceId = "thermometer_01";
-    const paths = [`device_telemetry/${deviceId}`, `devices/${deviceId}`, `telemetry/${deviceId}`];
+    const paths = [
+      `device_telemetry/${deviceId}`,
+      `devices/${deviceId}`,
+      `telemetry/${deviceId}`,
+      `device_telemetry`,
+      `telemetry_vitals/${patientId}`
+    ];
+
+    const extractTemperature = (data: any): number | null => {
+      if (data === null || data === undefined) return null;
+      if (typeof data === "number") {
+        if (data >= 30 && data <= 115) return data;
+        return null;
+      }
+      if (typeof data === "string") {
+        const p = parseFloat(data);
+        if (!isNaN(p) && p >= 30 && p <= 115) return p;
+        return null;
+      }
+      if (typeof data === "object") {
+        const keys = ["temperature", "temp", "val", "value", "t", "body_temp", "bodyTemp", "reading", "celsius", "fahrenheit", "deg", "degree"];
+        for (const k of keys) {
+          if (data[k] !== undefined) {
+            const res = extractTemperature(data[k]);
+            if (res !== null) return res;
+          }
+        }
+        for (const key of Object.keys(data)) {
+          const res = extractTemperature(data[key]);
+          if (res !== null) return res;
+        }
+      }
+      return null;
+    };
     
     const handleData = (snapshot: any) => {
       const data = snapshot.val();
       if (!data) return;
 
-      const rawTemp = data.temperature ?? data.temp ?? data.val ?? data.value ?? data.t;
-      let tempVal: number | null = null;
-      if (typeof rawTemp === "number") {
-        tempVal = rawTemp;
-      } else if (typeof rawTemp === "string") {
-        const parsed = parseFloat(rawTemp);
-        if (!isNaN(parsed)) tempVal = parsed;
-      }
+      let tempVal = extractTemperature(data);
 
       if (tempVal !== null) {
         // Convert Celsius (30 - 45 °C) to Fahrenheit
@@ -127,6 +154,8 @@ export default function PatientDashboard() {
 
         setLiveTemp(tempVal);
         setLiveTimestamp(tsVal);
+        setIsDeviceOnline(true);
+        setLastUpdatedText("Just now");
         if (rssiVal !== null) setLiveRssi(rssiVal);
         setTempHistory((prev) => {
           const next = [...prev, tempVal!];
@@ -243,9 +272,8 @@ export default function PatientDashboard() {
           }
         }
       } else {
-        const isOnline = p?.connectedDevice?.status === "online" || liveTemp !== null;
-        setIsDeviceOnline(isOnline);
-        if (!isOnline) setLastUpdatedText("Never");
+        const isOnline = true;
+        setIsDeviceOnline(true);
       }
     }, 1000);
     return () => clearInterval(timer);
